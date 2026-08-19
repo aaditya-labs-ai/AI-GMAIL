@@ -1,0 +1,39 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Email Base Envelope Card -->
+    <path
+        android:pathData="M27,36 C27,32.7 29.7,30 33,30 L75,30 C78.3,30 81,32.7 81,36 L81,72 C81,75.3 78.3,78 75,78 L33,78 C29.7,78 27,75.3 27,72 Z"
+        android:fillColor="#1E293B" />
+        
+    <!-- Red Accent Gmail Left & Right Fold -->
+    <path
+        android:pathData="M27,36 L54,55 L27,74 Z"
+        android:fillColor="#EA4335" />
+    <path
+        android:pathData="M81,36 L54,55 L81,74 Z"
+        android:fillColor="#4285F4" />
+        
+    <!-- Top Flap & Bottom -->
+    <path
+        android:pathData="M27,33 L54,52 L81,33 L75,30 L33,30 Z"
+        android:fillColor="#FBBC04" />
+    <path
+        android:pathData="M30,78 L54,58 L78,78 Z"
+        android:fillColor="#34A853" />
+
+    <!-- AI Sparkle / Star in Center -->
+    <path
+        android:pathData="M54,41 C54,47 50,51 44,51 C50,51 54,55 54,61 C54,55 58,51 64,51 C58,51 54,47 54,41 Z"
+        android:fillColor="#FFFFFF" />
+        
+    <!-- AI Small Star Top Right -->
+    <path
+        android:pathData="M72,25 C72,28 70,30 67,30 C70,30 72,32 72,35 C72,32 74,30 77,30 C74,30 72,28 72,25 Z"
+        android:fillColor="#FFD700" />
+</vector>
+

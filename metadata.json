@@ -1,0 +1,6 @@
+{
+  "name": "Gmail Assistant",
+  "description": "Personal AI Gmail and outreach assistant to read, write, send, automate email tasks, craft world-class cold mail, and manage connected social media.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
