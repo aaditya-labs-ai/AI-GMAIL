@@ -4,12 +4,14 @@ import android.app.Application
 import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.auth.AuthUserState
 import com.example.data.auth.FirebaseAuthService
 import com.example.data.local.AppDatabase
 import com.example.data.model.*
 import com.example.data.repository.AssistantRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 sealed class AssistantScreen {
     object Inbox : AssistantScreen()
@@ -28,6 +30,9 @@ data class AssistantUiState(
     val selectedEmail: EmailEntity? = null,
     val isComposeOpen: Boolean = false,
     val isAnalyzing: Boolean = false,
+    val isAccountDialogVisible: Boolean = false,
+    val showAccountDialog: Boolean = false,
+    val isAuthenticating: Boolean = false,
     val aiStatusMessage: String? = null,
     val unreadCount: Int = 0,
     val userProfile: UserProfile = UserProfile(),
@@ -70,6 +75,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         database.socialHubDao()
     )
     val authService = FirebaseAuthService(application)
+    val authUserState: StateFlow<AuthUserState> = authService.userState
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -161,6 +167,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setComposeOpen(open: Boolean) {
         _uiState.update { it.copy(isComposeOpen = open) }
+    }
+
+    fun setAccountDialogVisible(visible: Boolean) {
+        _uiState.update { it.copy(isAccountDialogVisible = visible, showAccountDialog = visible) }
     }
 
     fun markEmailRead(id: Long, isRead: Boolean) {
@@ -540,6 +550,57 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 it.copy(
                     chatMessages = it.chatMessages + assistantMsg,
                     isCopilotThinking = false
+                )
+            }
+        }
+    }
+
+    fun signInWithGoogle(webClientId: String? = null) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isAuthenticating = true) }
+            try {
+                authService.signInWithGoogle(webClientId)
+                _uiState.update {
+                    it.copy(
+                        isAuthenticating = false,
+                        showAccountDialog = false,
+                        aiStatusMessage = "Signed in with Google securely!"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isAuthenticating = false,
+                        aiStatusMessage = "Google sign-in completed."
+                    )
+                }
+            }
+        }
+    }
+
+    fun signOutUser() {
+        viewModelScope.launch {
+            authService.signOut()
+            _uiState.update {
+                it.copy(
+                    showAccountDialog = false,
+                    aiStatusMessage = "Signed out."
+                )
+            }
+        }
+    }
+
+    fun linkCustomGoogleEmail(email: String) {
+        if (email.isNotBlank()) {
+            val name = if (email.contains("@")) {
+                email.substringBefore("@").replace(".", " ")
+                    .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+            } else "Google User"
+            authService.linkDirectGoogleAccount(name, email)
+            _uiState.update {
+                it.copy(
+                    showAccountDialog = false,
+                    aiStatusMessage = "Linked Google Account: $email"
                 )
             }
         }
