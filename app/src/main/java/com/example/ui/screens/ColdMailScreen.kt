@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -641,50 +642,62 @@ fun ColdMailScreen(
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     FilledTonalButton(
                                         onClick = {
                                             clipboardManager.setText(AnnotatedString(uiState.generatedColdMail))
                                         },
-                                        shape = RoundedCornerShape(14.dp),
+                                        shape = RoundedCornerShape(12.dp),
                                         colors = ButtonDefaults.filledTonalButtonColors(
                                             containerColor = Light3dCardSubtle,
                                             contentColor = Text3dPrimary
                                         ),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
                                         Text("Copy", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
 
                                     FilledTonalButton(
                                         onClick = { viewModel.saveGeneratedColdCampaign() },
-                                        shape = RoundedCornerShape(14.dp),
+                                        shape = RoundedCornerShape(12.dp),
                                         colors = ButtonDefaults.filledTonalButtonColors(
                                             containerColor = Light3dCardSubtle,
                                             contentColor = Text3dPrimary
                                         ),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Cloud Save", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(13.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Save", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
 
                                     Button(
-                                        onClick = { viewModel.copyColdMailToDrafts() },
-                                        shape = RoundedCornerShape(14.dp),
+                                        onClick = {
+                                            val lines = uiState.generatedColdMail.lines()
+                                            val sub = lines.firstOrNull { it.contains("Subject:", ignoreCase = true) }
+                                                ?.substringAfter("Subject:", "")?.trim() ?: "Opportunity for ${uiState.coldTargetCompany}"
+                                            viewModel.openComposeWithContent(
+                                                to = "${uiState.coldTargetName.lowercase().replace(" ", "")}@${uiState.coldTargetCompany.lowercase().replace(" ", "")}.com",
+                                                subject = sub,
+                                                body = uiState.generatedColdMail
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = Purple3d,
                                             contentColor = Color.White
                                         ),
-                                        modifier = Modifier.weight(1.2f)
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        modifier = Modifier.weight(1.3f)
                                     ) {
-                                        Icon(Icons.Default.Drafts, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("To Drafts", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Compose", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }

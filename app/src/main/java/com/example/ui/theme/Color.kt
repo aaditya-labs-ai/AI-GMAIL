@@ -28,6 +28,7 @@ val GmailCoralLight = Color(0xFFFEECEB)
 
 val Emerald3d = Color(0xFF10B981)
 val Emerald3dLight = Color(0xFFECFDF5)
+val Emerald3dDark = Color(0xFF047857)
 
 val Amber3d = Color(0xFFF59E0B)
 val Amber3dLight = Color(0xFFFEF3C7)
@@ -50,11 +51,17 @@ val Gradient3dHero = Brush.linearGradient(
 val Gradient3dPrimary = Brush.horizontalGradient(
     listOf(Color(0xFF1A73E8), Color(0xFF3B82F6))
 )
+val Gradient3dDark = Brush.horizontalGradient(
+    listOf(Color(0xFF334155), Color(0xFF1E293B))
+)
 val Gradient3dPurple = Brush.horizontalGradient(
     listOf(Color(0xFF7C3AED), Color(0xFF9333EA))
 )
 val Gradient3dCoral = Brush.horizontalGradient(
     listOf(Color(0xFFEA4335), Color(0xFFFF6B6B))
+)
+val Gradient3dEmerald = Brush.horizontalGradient(
+    listOf(Color(0xFF10B981), Color(0xFF34D399))
 )
 val Gradient3dCardHighlight = Brush.verticalGradient(
     listOf(Color(0xFFFFFFFF), Color(0xFFF6F9FD))

@@ -9,6 +9,7 @@ import com.example.data.auth.FirebaseAuthService
 import com.example.data.local.AppDatabase
 import com.example.data.model.*
 import com.example.data.repository.AssistantRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -52,6 +53,10 @@ data class AssistantUiState(
     val isFastLiteMode: Boolean = false,
     val mapsGroundingResult: String? = null,
     val isSearchingMaps: Boolean = false,
+    // Context-aware Smart Replies State
+    val smartReplies: List<SmartReplyOption> = emptyList(),
+    val isAnalyzingSmartReplies: Boolean = false,
+    val selectedSmartReply: SmartReplyOption? = null,
     // Visual generation (1K, 2K, 4K)
     val selectedImageSize: String = "1K", // "1K", "2K", "4K"
     val generatedBannerUrl: String? = null,
@@ -63,19 +68,37 @@ data class AssistantUiState(
     val transcribedVoiceText: String? = null,
     // AI Chat Copilot
     val chatMessages: List<AiChatMessage> = emptyList(),
-    val isCopilotThinking: Boolean = false
+    val isCopilotThinking: Boolean = false,
+    // Room & Gmail Sync Status
+    val isSyncing: Boolean = false,
+    val syncProgressMessage: String = "All emails cached offline in Room",
+    val syncProgressFraction: Float = 1.0f,
+    val lastSyncTimestamp: Long = System.currentTimeMillis(),
+    // Compose Prefill
+    val composeInitialTo: String = "",
+    val composeInitialSubject: String = "",
+    val composeInitialBody: String = "",
+    // Tag Filtering
+    val selectedTagFilter: String? = null
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AssistantViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val repository = AssistantRepository(
         database.emailDao(),
         database.coldMailDao(),
         database.automationDao(),
-        database.socialHubDao()
+        database.socialHubDao(),
+        database.gmailThreadDao(),
+        database.gmailMessageDao(),
+        database.draftMessageDao()
     )
     val authService = FirebaseAuthService(application)
     val authUserState: StateFlow<AuthUserState> = authService.userState
+
+    val offlineDrafts: StateFlow<List<DraftMessageEntity>> = repository.getAllOfflineDrafts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -85,6 +108,8 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         .flatMapLatest { state ->
             if (state.searchQuery.isNotBlank()) {
                 repository.searchEmails(state.searchQuery)
+            } else if (!state.selectedTagFilter.isNullOrBlank()) {
+                repository.getEmailsByTag(state.selectedTagFilter)
             } else if (state.currentFolder == EmailFolder.STARRED) {
                 repository.getStarredEmails()
             } else if (state.currentFolder == EmailFolder.INBOX) {
@@ -158,10 +183,65 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(searchQuery = query) }
     }
 
+    fun setSelectedTagFilter(tag: String?) {
+        _uiState.update { it.copy(selectedTagFilter = tag) }
+    }
+
     fun selectEmail(email: EmailEntity?) {
-        _uiState.update { it.copy(selectedEmail = email) }
-        if (email != null && !email.isRead) {
-            markEmailRead(email.id, true)
+        _uiState.update {
+            it.copy(
+                selectedEmail = email,
+                smartReplies = emptyList(),
+                selectedSmartReply = null,
+                isAnalyzingSmartReplies = false
+            )
+        }
+        if (email != null) {
+            if (!email.isRead) {
+                markEmailRead(email.id, true)
+            }
+            loadSmartRepliesForEmail(email)
+        }
+    }
+
+    fun loadSmartRepliesForEmail(email: EmailEntity, forceRefresh: Boolean = false) {
+        if (!forceRefresh && _uiState.value.smartReplies.isNotEmpty() && _uiState.value.selectedEmail?.id == email.id) {
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isAnalyzingSmartReplies = true) }
+            val replies = repository.analyzeEmailForSmartReplies(
+                sender = email.senderName,
+                subject = email.subject,
+                body = email.body
+            )
+            _uiState.update {
+                it.copy(
+                    isAnalyzingSmartReplies = false,
+                    smartReplies = replies,
+                    selectedSmartReply = if (email.replyDraft == null) replies.firstOrNull() else it.selectedSmartReply
+                )
+            }
+            if (email.replyDraft == null && replies.isNotEmpty()) {
+                val defaultDraft = replies.first().fullDraft
+                repository.updateReplyDraft(email.id, defaultDraft)
+                _uiState.update { state ->
+                    state.copy(selectedEmail = email.copy(replyDraft = defaultDraft))
+                }
+            }
+        }
+    }
+
+    fun selectSmartReplyOption(option: SmartReplyOption) {
+        val email = _uiState.value.selectedEmail ?: return
+        viewModelScope.launch {
+            repository.updateReplyDraft(email.id, option.fullDraft)
+            _uiState.update {
+                it.copy(
+                    selectedSmartReply = option,
+                    selectedEmail = email.copy(replyDraft = option.fullDraft)
+                )
+            }
         }
     }
 
@@ -228,12 +308,52 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 tags = if (isDraft) "Draft" else "Sent Outbound"
             )
             repository.insertEmail(email)
+            if (isDraft) {
+                repository.saveOfflineDraft(
+                    DraftMessageEntity(
+                        recipientTo = to,
+                        subject = subject,
+                        body = body,
+                        lastSavedTimestamp = System.currentTimeMillis(),
+                        syncStatus = "LOCAL_DRAFT"
+                    )
+                )
+            }
             _uiState.update {
                 it.copy(
                     isComposeOpen = false,
-                    aiStatusMessage = if (isDraft) "Draft saved to Gmail" else "Email successfully sent!"
+                    aiStatusMessage = if (isDraft) "Draft cached locally to Room & ready for offline edit" else "Email successfully sent!"
                 )
             }
+        }
+    }
+
+    fun saveDraftMessage(
+        to: String,
+        subject: String,
+        body: String,
+        threadId: String? = null,
+        draftId: Long = 0
+    ) {
+        viewModelScope.launch {
+            val draft = DraftMessageEntity(
+                draftId = draftId,
+                threadId = threadId,
+                recipientTo = to,
+                subject = subject,
+                body = body,
+                lastSavedTimestamp = System.currentTimeMillis(),
+                syncStatus = "LOCAL_DRAFT"
+            )
+            repository.saveOfflineDraft(draft)
+            _uiState.update { it.copy(aiStatusMessage = "Draft auto-saved offline in Room database") }
+        }
+    }
+
+    fun deleteDraftMessage(draftId: Long) {
+        viewModelScope.launch {
+            repository.deleteOfflineDraft(draftId)
+            _uiState.update { it.copy(aiStatusMessage = "Draft deleted") }
         }
     }
 
@@ -608,5 +728,146 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun clearStatusMessage() {
         _uiState.update { it.copy(aiStatusMessage = null) }
+    }
+
+    fun openComposeWithContent(to: String = "", subject: String = "", body: String = "") {
+        _uiState.update {
+            it.copy(
+                isComposeOpen = true,
+                composeInitialTo = to,
+                composeInitialSubject = subject,
+                composeInitialBody = body
+            )
+        }
+    }
+
+    fun triggerSync() {
+        if (_uiState.value.isSyncing) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isSyncing = true,
+                    syncProgressFraction = 0.05f,
+                    syncProgressMessage = "Initializing sync with Room & Gmail API..."
+                )
+            }
+
+            com.example.data.api.GmailApiClient.syncThreadsWithRoom(
+                repository = repository,
+                authToken = authService.userState.value.email
+            ) { progress, message ->
+                _uiState.update {
+                    it.copy(
+                        syncProgressFraction = progress,
+                        syncProgressMessage = message
+                    )
+                }
+            }
+
+            _uiState.update {
+                it.copy(
+                    isSyncing = false,
+                    lastSyncTimestamp = System.currentTimeMillis(),
+                    syncProgressFraction = 1.0f,
+                    syncProgressMessage = "Sync complete • All emails cached in Room",
+                    aiStatusMessage = "Emails and threads synced with Room database"
+                )
+            }
+        }
+    }
+
+    fun generateColdEmailFromKeywords(
+        contextKeywords: String,
+        framework: String = "AIDA",
+        tone: String = "Executive",
+        onResult: (subject: String, body: String) -> Unit
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(aiStatusMessage = "Gemini is crafting cold email...") }
+            val prompt = """
+                You are a world-class cold email copywriter.
+                Generate a high-converting cold email template for Aditya Rai (kumaradityarai0005@gmail.com).
+                Context/Keywords: $contextKeywords
+                Framework: $framework
+                Tone: $tone
+                
+                Format response EXACTLY as:
+                SUBJECT: <Single punchy subject line under 7 words>
+                BODY:
+                <Body copy under 90 words with personalized hook, clear value proposition, and low-friction call to action>
+            """.trimIndent()
+
+            try {
+                val response = com.example.data.api.GeminiApiClient.callGemini(prompt)
+                val lines = response.lines()
+                val subjectLine = lines.firstOrNull { it.startsWith("SUBJECT:", ignoreCase = true) }
+                    ?.replace("SUBJECT:", "", ignoreCase = true)?.trim()
+                    ?: lines.firstOrNull()?.replace("Subject:", "")?.trim()
+                    ?: "Quick question regarding $contextKeywords"
+
+                val bodyStartIndex = lines.indexOfFirst { it.startsWith("BODY:", ignoreCase = true) }
+                val bodyText = if (bodyStartIndex != -1 && bodyStartIndex + 1 < lines.size) {
+                    lines.subList(bodyStartIndex + 1, lines.size).joinToString("\n").trim()
+                } else {
+                    response.substringAfter("BODY:").trim().ifEmpty { response }
+                }
+
+                onResult(subjectLine, bodyText)
+                _uiState.update { it.copy(aiStatusMessage = "Cold email generated with Gemini!") }
+            } catch (e: Exception) {
+                onResult("Follow up: $contextKeywords", "Hi,\n\nWanted to quickly connect regarding $contextKeywords. Let's schedule 10 mins.\n\nBest,\nAditya Rai")
+            }
+        }
+    }
+
+    fun analyzeContactProfileAndGenerateColdMail(
+        contactName: String,
+        company: String,
+        role: String,
+        bioSnippet: String,
+        recentNews: String,
+        tone: String
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGeneratingColdMail = true) }
+            val prompt = """
+                You are a high-level executive sales strategist and cold email expert.
+                Analyze the following contact profile data:
+                - Name: $contactName
+                - Company: $company
+                - Role: $role
+                - Bio/LinkedIn Summary: $bioSnippet
+                - Recent News/Activity: $recentNews
+                
+                Task:
+                1. Identify the contact's top 2 strategic pain points or opportunities.
+                2. Craft a world-class, hyper-personalized cold outreach email from Aditya Rai.
+                3. Provide 2 high-open-rate subject line variants.
+                4. Provide 1 low-friction follow-up sequence.
+                
+                Format output cleanly with clear headers.
+            """.trimIndent()
+
+            try {
+                val result = com.example.data.api.GeminiApiClient.callGemini(prompt)
+                _uiState.update {
+                    it.copy(
+                        generatedColdMail = result,
+                        isGeneratingColdMail = false,
+                        coldTargetName = contactName,
+                        coldTargetCompany = company,
+                        coldTargetRole = role,
+                        aiStatusMessage = "Personalized pitch generated for $contactName!"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isGeneratingColdMail = false,
+                        aiStatusMessage = "Error generating pitch: ${e.message}"
+                    )
+                }
+            }
+        }
     }
 }

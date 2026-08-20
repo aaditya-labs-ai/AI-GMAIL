@@ -545,39 +545,247 @@ fun InboxScreen(
                 }
             }
 
-            // 3D Filter Chips
+            // 3D Visual Tag & Folder Filter Chips
             item {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Tag Category Filters
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "CATEGORIES & TAGS",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Text3dMuted,
+                            letterSpacing = 0.5.sp
+                        )
+                        if (uiState.selectedTagFilter != null) {
+                            Text(
+                                text = "Clear Tag Filter",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = ElectricBlue,
+                                modifier = Modifier
+                                    .clickable { viewModel.setSelectedTagFilter(null) }
+                                    .padding(4.dp)
+                            )
+                        }
+                    }
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        item {
+                            FilterChip3D(
+                                label = "🏷️ All Mails",
+                                isSelected = uiState.selectedTagFilter == null,
+                                onClick = { viewModel.setSelectedTagFilter(null) }
+                            )
+                        }
+                        item {
+                            FilterChip3D(
+                                label = "💼 Work",
+                                isSelected = uiState.selectedTagFilter == "Work",
+                                onClick = {
+                                    if (uiState.selectedTagFilter == "Work") viewModel.setSelectedTagFilter(null)
+                                    else viewModel.setSelectedTagFilter("Work")
+                                }
+                            )
+                        }
+                        item {
+                            FilterChip3D(
+                                label = "👤 Personal",
+                                isSelected = uiState.selectedTagFilter == "Personal",
+                                onClick = {
+                                    if (uiState.selectedTagFilter == "Personal") viewModel.setSelectedTagFilter(null)
+                                    else viewModel.setSelectedTagFilter("Personal")
+                                }
+                            )
+                        }
+                        item {
+                            FilterChip3D(
+                                label = "🚨 Urgent",
+                                isSelected = uiState.selectedTagFilter == "Urgent",
+                                onClick = {
+                                    if (uiState.selectedTagFilter == "Urgent") viewModel.setSelectedTagFilter(null)
+                                    else viewModel.setSelectedTagFilter("Urgent")
+                                }
+                            )
+                        }
+                    }
+
+                    // Folder Filter Chips
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        item {
+                            FilterChip3D(
+                                label = "Inbox ($unreadCount)",
+                                isSelected = uiState.currentFolder == EmailFolder.INBOX && uiState.selectedTagFilter == null,
+                                onClick = {
+                                    viewModel.setSelectedTagFilter(null)
+                                    viewModel.setFolder(EmailFolder.INBOX)
+                                }
+                            )
+                        }
+                        item {
+                            FilterChip3D(
+                                label = "⭐ Starred",
+                                isSelected = uiState.currentFolder == EmailFolder.STARRED && uiState.selectedTagFilter == null,
+                                onClick = {
+                                    viewModel.setSelectedTagFilter(null)
+                                    viewModel.setFolder(EmailFolder.STARRED)
+                                }
+                            )
+                        }
+                        item {
+                            FilterChip3D(
+                                label = "📤 Sent",
+                                isSelected = uiState.currentFolder == EmailFolder.SENT && uiState.selectedTagFilter == null,
+                                onClick = {
+                                    viewModel.setSelectedTagFilter(null)
+                                    viewModel.setFolder(EmailFolder.SENT)
+                                }
+                            )
+                        }
+                        item {
+                            FilterChip3D(
+                                label = "📝 Drafts",
+                                isSelected = uiState.currentFolder == EmailFolder.DRAFTS && uiState.selectedTagFilter == null,
+                                onClick = {
+                                    viewModel.setSelectedTagFilter(null)
+                                    viewModel.setFolder(EmailFolder.DRAFTS)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3D Room Database & Gmail Network Sync Progress Header Card
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(
+                            elevation = 3.dp,
+                            shape = RoundedCornerShape(18.dp),
+                            ambientColor = ShadowAmbient,
+                            spotColor = ShadowSpot
+                        )
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color.White)
+                        .border(1.dp, Light3dBorder, RoundedCornerShape(18.dp))
+                        .padding(14.dp)
                 ) {
-                    item {
-                        FilterChip3D(
-                            label = "Inbox ($unreadCount)",
-                            isSelected = uiState.currentFolder == EmailFolder.INBOX,
-                            onClick = { viewModel.setFolder(EmailFolder.INBOX) }
-                        )
-                    }
-                    item {
-                        FilterChip3D(
-                            label = "⭐ Starred",
-                            isSelected = uiState.currentFolder == EmailFolder.STARRED,
-                            onClick = { viewModel.setFolder(EmailFolder.STARRED) }
-                        )
-                    }
-                    item {
-                        FilterChip3D(
-                            label = "📤 Sent",
-                            isSelected = uiState.currentFolder == EmailFolder.SENT,
-                            onClick = { viewModel.setFolder(EmailFolder.SENT) }
-                        )
-                    }
-                    item {
-                        FilterChip3D(
-                            label = "📝 Drafts",
-                            isSelected = uiState.currentFolder == EmailFolder.DRAFTS,
-                            onClick = { viewModel.setFolder(EmailFolder.DRAFTS) }
-                        )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .shadow(2.dp, CircleShape, spotColor = if (uiState.isSyncing) ElectricBlue else Emerald3d)
+                                        .clip(CircleShape)
+                                        .background(if (uiState.isSyncing) ElectricBlueLight else Emerald3dLight),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (uiState.isSyncing) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            color = ElectricBlue,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Default.CloudDone,
+                                            contentDescription = "Synced",
+                                            tint = Emerald3d,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = if (uiState.isSyncing) "Syncing with Room..." else "Room Database Cache",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Text3dPrimary
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (uiState.isSyncing) "• Background" else "• Offline Ready",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (uiState.isSyncing) ElectricBlue else Emerald3d
+                                        )
+                                    }
+                                    Text(
+                                        text = uiState.syncProgressMessage,
+                                        fontSize = 11.sp,
+                                        color = Text3dSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // 3D Sync Now Button
+                            Button(
+                                onClick = { viewModel.triggerSync() },
+                                enabled = !uiState.isSyncing,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Light3dCardSubtle,
+                                    contentColor = ElectricBlue,
+                                    disabledContainerColor = Light3dCardSubtle.copy(alpha = 0.5f)
+                                ),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier
+                                    .height(32.dp)
+                                    .testTag("btn_sync_room_db")
+                            ) {
+                                Icon(
+                                    Icons.Default.Sync,
+                                    contentDescription = "Sync",
+                                    tint = ElectricBlue,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (uiState.isSyncing) "Syncing" else "Sync Now",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        if (uiState.isSyncing) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LinearProgressIndicator(
+                                progress = { uiState.syncProgressFraction },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = ElectricBlue,
+                                trackColor = ElectricBlueLight,
+                            )
+                        }
                     }
                 }
             }
@@ -592,11 +800,11 @@ fun InboxScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "PRIORITY INBOX & THREADS",
-                        fontSize = 12.sp,
+                        text = "PRIORITY INBOX & THREADS (SWIPE TO ARCHIVE/DELETE)",
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = Text3dSecondary,
-                        letterSpacing = 1.sp
+                        letterSpacing = 0.5.sp
                     )
                     Text(
                         text = "${emails.size} items",
@@ -649,7 +857,7 @@ fun InboxScreen(
                 }
             } else {
                 items(emails, key = { it.id }) { email ->
-                    Email3DItem(
+                    SwipeableEmail3DItem(
                         email = email,
                         onSelect = { viewModel.selectEmail(email) },
                         onToggleStar = { viewModel.toggleStarred(email) },

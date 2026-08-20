@@ -12,8 +12,57 @@ class AssistantRepository(
     private val coldMailDao: ColdMailDao,
     private val automationDao: AutomationDao,
     private val socialDao: SocialHubDao,
+    private val gmailThreadDao: GmailThreadDao? = null,
+    private val gmailMessageDao: GmailMessageDao? = null,
+    private val draftMessageDao: DraftMessageDao? = null,
     private val firestoreService: FirestoreService = FirestoreService()
 ) {
+    // Local Offline Drafts Cache
+    fun getAllOfflineDrafts(): Flow<List<DraftMessageEntity>> =
+        draftMessageDao?.getAllDrafts() ?: kotlinx.coroutines.flow.flowOf(emptyList())
+
+    fun getOfflineDraftForThread(threadId: String): Flow<DraftMessageEntity?> =
+        draftMessageDao?.getDraftForThread(threadId) ?: kotlinx.coroutines.flow.flowOf(null)
+
+    suspend fun saveOfflineDraft(draft: DraftMessageEntity): Long =
+        draftMessageDao?.insertOrUpdateDraft(draft) ?: 0L
+
+    suspend fun deleteOfflineDraft(draftId: Long) =
+        draftMessageDao?.deleteDraftById(draftId)
+
+    suspend fun deleteOfflineDraftsForThread(threadId: String) =
+        draftMessageDao?.deleteDraftsForThread(threadId)
+
+    // Gmail Threads & Messages Offline Cache streams
+    fun getGmailThreadsByFolder(folder: EmailFolder): Flow<List<GmailThreadEntity>> =
+        gmailThreadDao?.getThreadsByFolder(folder) ?: kotlinx.coroutines.flow.flowOf(emptyList())
+
+    fun getGmailThreadsByCategory(folder: EmailFolder, category: EmailCategory): Flow<List<GmailThreadEntity>> =
+        gmailThreadDao?.getThreadsByFolderAndCategory(folder, category) ?: kotlinx.coroutines.flow.flowOf(emptyList())
+
+    fun getGmailThreadWithMessages(threadId: String): Flow<GmailThreadWithMessages?> =
+        gmailThreadDao?.getThreadWithMessages(threadId) ?: kotlinx.coroutines.flow.flowOf(null)
+
+    fun getMessagesForThread(threadId: String): Flow<List<GmailMessageEntity>> =
+        gmailMessageDao?.getMessagesForThread(threadId) ?: kotlinx.coroutines.flow.flowOf(emptyList())
+
+    suspend fun saveFetchedGmailThread(thread: GmailThreadEntity, messages: List<GmailMessageEntity>) {
+        gmailThreadDao?.insertThread(thread)
+        gmailMessageDao?.insertMessages(messages)
+    }
+
+    suspend fun updateThreadUnread(threadId: String, isUnread: Boolean) {
+        gmailThreadDao?.updateThreadUnread(threadId, isUnread)
+    }
+
+    suspend fun updateThreadStarred(threadId: String, isStarred: Boolean) {
+        gmailThreadDao?.updateThreadStarred(threadId, isStarred)
+    }
+
+    suspend fun updateThreadFolder(threadId: String, folder: EmailFolder) {
+        gmailThreadDao?.updateThreadFolder(threadId, folder)
+    }
+
     // Email streams
     fun getEmailsByFolder(folder: EmailFolder): Flow<List<EmailEntity>> =
         emailDao.getEmailsByFolder(folder)
@@ -26,6 +75,9 @@ class AssistantRepository(
 
     fun searchEmails(query: String): Flow<List<EmailEntity>> =
         emailDao.searchEmails(query)
+
+    fun getEmailsByTag(tag: String): Flow<List<EmailEntity>> =
+        emailDao.getEmailsByTag(tag)
 
     fun getUnreadCount(): Flow<Int> =
         emailDao.getUnreadCount()
@@ -185,6 +237,109 @@ class AssistantRepository(
      */
     suspend fun generateCampaignImage(prompt: String, imageSize: String): String {
         return GeminiApiClient.generateImage(prompt, imageSize = imageSize)
+    }
+
+    /**
+     * Context-aware Smart Reply feature using Gemini API
+     * Analyzes incoming email body and returns 3 tailored quick replies (e.g. Acknowledge, Request Meeting, Decline).
+     */
+    suspend fun analyzeEmailForSmartReplies(sender: String, subject: String, body: String): List<SmartReplyOption> {
+        val prompt = """
+        Analyze the incoming email below for Aditya Rai (kumaradityarai0005@gmail.com).
+        Generate exactly 3 distinct, context-aware smart quick-reply choices with drafted responses:
+        1. An acknowledgement / confirmation response (e.g. "Acknowledge", "Confirm Received")
+        2. An actionable / scheduling / follow-up response (e.g. "Request Meeting", "Propose Call", "Send Info")
+        3. A polite decline / deferral response (e.g. "Decline", "Politely Pass", "Not at this time")
+
+        Incoming Email Sender: $sender
+        Subject: $subject
+        Body:
+        $body
+
+        Respond in the following clean format with three sections separated by '---REPLY---':
+        LABEL: <Short button title, 2-4 words, e.g. 'Acknowledge Receipt'>
+        TYPE: <acknowledge | meeting | decline>
+        BODY:
+        <Complete, professional email reply signed off as Aditya Rai (kumaradityarai0005@gmail.com)>
+        ---REPLY---
+        LABEL: <Short button title, 2-4 words, e.g. 'Request Meeting'>
+        TYPE: <meeting>
+        BODY:
+        <Complete, professional email reply signed off as Aditya Rai (kumaradityarai0005@gmail.com)>
+        ---REPLY---
+        LABEL: <Short button title, 2-4 words, e.g. 'Politely Decline'>
+        TYPE: <decline>
+        BODY:
+        <Complete, professional email reply signed off as Aditya Rai (kumaradityarai0005@gmail.com)>
+        """.trimIndent()
+
+        try {
+            val response = GeminiApiClient.callLowLatency(prompt)
+            val replyBlocks = response.split("---REPLY---").map { it.trim() }.filter { it.isNotBlank() }
+            val options = mutableListOf<SmartReplyOption>()
+
+            for ((index, block) in replyBlocks.withIndex()) {
+                val labelLine = block.lines().firstOrNull { it.startsWith("LABEL:", ignoreCase = true) }
+                val typeLine = block.lines().firstOrNull { it.startsWith("TYPE:", ignoreCase = true) }
+                val label = labelLine?.substringAfter(":")?.trim()
+                    ?: when (index) {
+                        0 -> "Acknowledge"
+                        1 -> "Request Meeting"
+                        else -> "Decline"
+                    }
+                val iconType = typeLine?.substringAfter(":")?.trim()?.lowercase()
+                    ?: when (index) {
+                        0 -> "acknowledge"
+                        1 -> "meeting"
+                        else -> "decline"
+                    }
+                val bodyIndex = block.indexOf("BODY:", ignoreCase = true)
+                val replyBody = if (bodyIndex != -1) {
+                    block.substring(bodyIndex + 5).trim()
+                } else {
+                    block.lines().drop(2).joinToString("\n").trim()
+                }
+
+                if (label.isNotBlank() && replyBody.isNotBlank()) {
+                    options.add(
+                        SmartReplyOption(
+                            id = "smart_reply_${index + 1}",
+                            label = label,
+                            iconType = iconType,
+                            fullDraft = replyBody
+                        )
+                    )
+                }
+            }
+
+            if (options.size >= 3) {
+                return options.take(3)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AssistantRepository", "analyzeEmailForSmartReplies error: ${e.message}")
+        }
+
+        // Robust context-aware fallbacks if offline or error
+        return listOf(
+            SmartReplyOption(
+                id = "smart_reply_1",
+                label = "Acknowledge",
+                iconType = "acknowledge",
+                fullDraft = "Hi $sender,\n\nThanks for following up on \"$subject\". I have received your email and will review the details shortly.\n\nBest regards,\nAditya Rai\nkumaradityarai0005@gmail.com"
+            ),
+            SmartReplyOption(
+                id = "smart_reply_2",
+                label = "Request Meeting",
+                iconType = "meeting",
+                fullDraft = "Hi $sender,\n\nThanks for reaching out! Let's schedule a brief 15-minute call to discuss this further. Are you available this Thursday afternoon or Friday morning?\n\nBest regards,\nAditya Rai\nkumaradityarai0005@gmail.com"
+            ),
+            SmartReplyOption(
+                id = "smart_reply_3",
+                label = "Decline",
+                iconType = "decline",
+                fullDraft = "Hi $sender,\n\nThank you for reaching out regarding this opportunity. Unfortunately, due to current project priorities, we will not be able to proceed at this time. I'll be sure to keep your details in mind for future collaboration.\n\nBest regards,\nAditya Rai\nkumaradityarai0005@gmail.com"
+            )
+        )
     }
 
     /**

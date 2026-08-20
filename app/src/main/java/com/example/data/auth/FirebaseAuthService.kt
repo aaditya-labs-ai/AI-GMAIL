@@ -7,6 +7,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
+import com.example.BuildConfig
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
@@ -46,10 +47,13 @@ class FirebaseAuthService(private val context: Context) {
                     false
                 }
                 if (!initialized) {
+                    val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { "dummy_local_key" }
+                    val projectId = BuildConfig.FIREBASE_PROJECT_ID.ifBlank { "ai-studio-gmail-assistant" }
+                    val appId = BuildConfig.FIREBASE_APPLICATION_ID.ifBlank { "com.aistudio.gmailassistant.kdqpxz" }
                     val options = com.google.firebase.FirebaseOptions.Builder()
-                        .setApplicationId("com.aistudio.gmailassistant.kdqpxz")
-                        .setProjectId("ai-studio-gmail-assistant")
-                        .setApiKey("AIzaSyDummyKeyForLocalInitialization0001")
+                        .setApplicationId(appId)
+                        .setProjectId(projectId)
+                        .setApiKey(apiKey)
                         .build()
                     com.google.firebase.FirebaseApp.initializeApp(context, options)
                 }
@@ -138,9 +142,13 @@ class FirebaseAuthService(private val context: Context) {
             val digest = md.digest(rawNonce.toByteArray())
             val hashedNonce = digest.fold("") { str, it -> str + "%02x".format(it) }
 
+            val effectiveClientId = webClientId?.takeIf { it.isNotBlank() }
+                ?: BuildConfig.GOOGLE_WEB_CLIENT_ID.takeIf { it.isNotBlank() && !it.startsWith("YOUR_") }
+                ?: "default-client-id"
+
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)
-                .setServerClientId(webClientId ?: "865896074953-dummy-web-client.apps.googleusercontent.com")
+                .setServerClientId(effectiveClientId)
                 .setAutoSelectEnabled(false)
                 .setNonce(hashedNonce)
                 .build()

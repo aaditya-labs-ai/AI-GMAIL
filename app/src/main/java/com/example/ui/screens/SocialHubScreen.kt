@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -381,7 +382,7 @@ fun SocialAccount3DCard(
                             SocialPlatform.LINKEDIN -> Icons.Default.Work
                             SocialPlatform.TWITTER_X -> Icons.Default.Tag
                             SocialPlatform.GITHUB -> Icons.Default.Code
-                            SocialPlatform.SUBSTACK -> Icons.Default.Article
+                            SocialPlatform.SUBSTACK -> Icons.AutoMirrored.Filled.Article
                             SocialPlatform.INSTAGRAM -> Icons.Default.PhotoCamera
                         },
                         contentDescription = null,

@@ -210,9 +210,9 @@ fun MainAppScreen(
                         containerColor = Color.Transparent,
                         contentColor = Color.White,
                         elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
-                        icon = { Icon(Icons.Default.Edit, contentDescription = "Compose", tint = Color.White) },
-                        text = { Text("Compose", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 15.sp) },
-                        modifier = Modifier.testTag("fab_compose")
+                        icon = { Icon(Icons.Default.Edit, contentDescription = "Compose Email", tint = Color.White) },
+                        text = { Text("Compose Email", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp) },
+                        modifier = Modifier.testTag("fab_compose_email")
                     )
                 }
             }
@@ -280,6 +280,9 @@ fun MainAppScreen(
         ComposeEmailSheet(
             viewModel = viewModel,
             userEmail = authUserState.email,
+            initialTo = uiState.composeInitialTo,
+            initialSubject = uiState.composeInitialSubject,
+            initialBody = uiState.composeInitialBody,
             onDismiss = { viewModel.setComposeOpen(false) }
         )
     }
