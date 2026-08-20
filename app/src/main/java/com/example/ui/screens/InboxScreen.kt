@@ -138,31 +138,64 @@ fun InboxScreen(
                         }
                     }
 
-                    // 3D Google Account / Security Button
-                    Box(
-                        modifier = Modifier
-                            .shadow(
-                                elevation = 4.dp,
-                                shape = CircleShape,
-                                ambientColor = ShadowAmbient,
-                                spotColor = ShadowSpot
-                            )
-                            .clip(CircleShape)
-                            .background(Color.White)
-                            .border(1.dp, Light3dBorder, CircleShape)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        IconButton(
-                            onClick = { viewModel.setAccountDialogVisible(true) },
+                        // 3D Settings Button (Notification Preferences)
+                        Box(
                             modifier = Modifier
-                                .size(42.dp)
-                                .testTag("btn_auth_dialog_open")
+                                .shadow(
+                                    elevation = 4.dp,
+                                    shape = CircleShape,
+                                    ambientColor = ShadowAmbient,
+                                    spotColor = ShadowSpot
+                                )
+                                .clip(CircleShape)
+                                .background(Color.White)
+                                .border(1.dp, Light3dBorder, CircleShape)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.AccountCircle,
-                                contentDescription = "Google Account Auth",
-                                tint = ElectricBlue,
-                                modifier = Modifier.size(22.dp)
-                            )
+                            IconButton(
+                                onClick = { viewModel.setSettingsOpen(true) },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .testTag("btn_settings_open")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = "Notification Settings",
+                                    tint = Text3dSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // 3D Google Account / Security Button
+                        Box(
+                            modifier = Modifier
+                                .shadow(
+                                    elevation = 4.dp,
+                                    shape = CircleShape,
+                                    ambientColor = ShadowAmbient,
+                                    spotColor = ShadowSpot
+                                )
+                                .clip(CircleShape)
+                                .background(Color.White)
+                                .border(1.dp, Light3dBorder, CircleShape)
+                        ) {
+                            IconButton(
+                                onClick = { viewModel.setAccountDialogVisible(true) },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .testTag("btn_auth_dialog_open")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccountCircle,
+                                    contentDescription = "Google Account Auth",
+                                    tint = ElectricBlue,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -299,6 +332,17 @@ fun InboxScreen(
                         )
                     }
                 }
+            }
+
+            // D3-based Category Breakdown Bar Chart Stats Card
+            item {
+                InboxCategoryStatsCard(
+                    emails = emails,
+                    selectedFilter = uiState.selectedTagFilter,
+                    onCategorySelected = { category ->
+                        viewModel.setSelectedTagFilter(category)
+                    }
+                )
             }
 
             // 3D Hero Insight Card (Claymorphic / Dimensional)

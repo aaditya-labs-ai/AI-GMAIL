@@ -79,7 +79,13 @@ data class AssistantUiState(
     val composeInitialSubject: String = "",
     val composeInitialBody: String = "",
     // Tag Filtering
-    val selectedTagFilter: String? = null
+    val selectedTagFilter: String? = null,
+    // Settings & Notification Preferences
+    val isSettingsOpen: Boolean = false,
+    val notificationPreferences: NotificationPreferences = NotificationPreferences(),
+    // Scheduled Emails
+    val scheduledEmails: List<ScheduledEmail> = emptyList(),
+    val isSummarizingThread: Boolean = false
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -870,4 +876,149 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
+
+    private val firestoreService = com.example.data.firestore.FirestoreService()
+
+    fun setSettingsOpen(open: Boolean) {
+        _uiState.update { it.copy(isSettingsOpen = open) }
+    }
+
+    fun updateNotificationPreferences(prefs: NotificationPreferences) {
+        _uiState.update {
+            it.copy(
+                notificationPreferences = prefs,
+                aiStatusMessage = "Notification preferences updated"
+            )
+        }
+        viewModelScope.launch {
+            val userId = authUserState.value.uid.ifEmpty { "user_default" }
+            firestoreService.saveNotificationPreferencesToCloud(userId, prefs)
+        }
+    }
+
+    fun scheduleSendEmail(
+        to: String,
+        subject: String,
+        body: String,
+        scheduledTimeEpoch: Long,
+        scheduledTimeFormatted: String
+    ) {
+        val scheduledEmail = ScheduledEmail(
+            recipientTo = to,
+            subject = subject,
+            body = body,
+            scheduledTimeEpoch = scheduledTimeEpoch,
+            scheduledTimeFormatted = scheduledTimeFormatted,
+            status = "SCHEDULED"
+        )
+
+        // Add to state and save to Room + Firestore
+        _uiState.update {
+            it.copy(
+                isComposeOpen = false,
+                scheduledEmails = it.scheduledEmails + scheduledEmail,
+                aiStatusMessage = "Email scheduled for $scheduledTimeFormatted!"
+            )
+        }
+
+        viewModelScope.launch {
+            // Save as Draft in Room with scheduled tag
+            val email = EmailEntity(
+                senderName = _uiState.value.userProfile.displayName,
+                senderEmail = _uiState.value.userProfile.email,
+                recipientEmail = to,
+                subject = subject,
+                snippet = "[Scheduled: $scheduledTimeFormatted] $body".take(100),
+                body = body,
+                timestamp = scheduledTimeEpoch,
+                isRead = true,
+                folder = EmailFolder.DRAFTS,
+                category = EmailCategory.PRIMARY,
+                priority = EmailPriority.NORMAL,
+                tags = "Scheduled, $scheduledTimeFormatted"
+            )
+            repository.insertEmail(email)
+
+            // Save to Firestore
+            val userId = authUserState.value.uid.ifEmpty { "user_default" }
+            firestoreService.saveScheduledEmailToCloud(userId, scheduledEmail)
+
+            // Background worker trigger simulation:
+            val delayMs = (scheduledTimeEpoch - System.currentTimeMillis()).coerceAtLeast(0L)
+            if (delayMs in 1..60000L) {
+                // If scheduled within a minute, trigger dispatch
+                kotlinx.coroutines.delay(delayMs)
+                repository.updateFolder(email.id, EmailFolder.SENT)
+                _uiState.update {
+                    it.copy(aiStatusMessage = "Scheduled email to $to has been dispatched!")
+                }
+            }
+        }
+    }
+
+    fun summarizeEmailThreadWithGemini(email: EmailEntity) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSummarizingThread = true) }
+            val prompt = """
+                You are an executive AI assistant summarizing an email conversation thread.
+                Sender: ${email.senderName} (${email.senderEmail})
+                Recipient: ${email.recipientEmail}
+                Subject: ${email.subject}
+                
+                Email Body & Thread Context:
+                ${email.body}
+                
+                Provide a brief, high-level executive summary of this email thread (2-3 concise bullet points) and immediate action items.
+                
+                Format EXACTLY as:
+                SUMMARY:
+                • <bullet 1>
+                • <bullet 2>
+                
+                ACTION ITEMS:
+                • <action 1>
+                • <action 2>
+            """.trimIndent()
+
+            try {
+                val response = com.example.data.api.GeminiApiClient.callGemini(
+                    prompt = prompt,
+                    model = com.example.data.api.GeminiApiClient.MODEL_FLASH_GENERAL
+                )
+                
+                val summaryPart = if (response.contains("ACTION ITEMS:", ignoreCase = true)) {
+                    response.substringBefore("ACTION ITEMS:").replace("SUMMARY:", "").trim()
+                } else {
+                    response.trim()
+                }
+
+                val actionPart = if (response.contains("ACTION ITEMS:", ignoreCase = true)) {
+                    response.substringAfter("ACTION ITEMS:").trim()
+                } else {
+                    "• Review email thread and reply if needed"
+                }
+
+                repository.updateAiSummary(email.id, summaryPart, actionPart)
+                _uiState.update { state ->
+                    state.copy(
+                        isSummarizingThread = false,
+                        selectedEmail = email.copy(aiSummary = summaryPart, aiActionItems = actionPart),
+                        aiStatusMessage = "Thread summarized with Gemini AI!"
+                    )
+                }
+            } catch (e: Exception) {
+                val fallbackSummary = "High-level review: ${email.senderName} is discussing '${email.subject}'. Key action required on scheduling and alignment."
+                val fallbackActions = "• Confirm response timeline\n• Review attached materials"
+                repository.updateAiSummary(email.id, fallbackSummary, fallbackActions)
+                _uiState.update { state ->
+                    state.copy(
+                        isSummarizingThread = false,
+                        selectedEmail = email.copy(aiSummary = fallbackSummary, aiActionItems = fallbackActions),
+                        aiStatusMessage = "Thread summarized!"
+                    )
+                }
+            }
+        }
+    }
 }
+

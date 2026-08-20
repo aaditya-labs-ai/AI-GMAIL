@@ -216,6 +216,30 @@ data class SocialOutreachItem(
     val isSent: Boolean = false
 )
 
+data class NotificationPreferences(
+    val notifyUrgent: Boolean = true,
+    val notifyWork: Boolean = true,
+    val notifyPersonal: Boolean = true,
+    val notifyInvestors: Boolean = true,
+    val notifyPromotions: Boolean = false,
+    val notifySocial: Boolean = false,
+    val quietHoursEnabled: Boolean = false,
+    val quietHoursStart: String = "22:00",
+    val quietHoursEnd: String = "07:00"
+)
+
+data class ScheduledEmail(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val recipientTo: String,
+    val recipientCc: String = "",
+    val subject: String,
+    val body: String,
+    val scheduledTimeEpoch: Long,
+    val scheduledTimeFormatted: String,
+    val status: String = "SCHEDULED", // "SCHEDULED", "SENT", "CANCELLED"
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 data class UserProfile(
     val displayName: String = "Aditya Rai",
     val email: String = "kumaradityarai0005@gmail.com",

@@ -298,4 +298,13 @@ fun MainAppScreen(
             onDismiss = { viewModel.setAccountDialogVisible(false) }
         )
     }
+
+    // Notification Settings Dialog
+    if (uiState.isSettingsOpen) {
+        SettingsDialog(
+            viewModel = viewModel,
+            preferences = uiState.notificationPreferences,
+            onDismiss = { viewModel.setSettingsOpen(false) }
+        )
+    }
 }

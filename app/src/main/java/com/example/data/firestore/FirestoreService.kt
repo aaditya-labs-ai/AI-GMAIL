@@ -104,4 +104,59 @@ class FirestoreService {
             Log.e("FirestoreService", "Failed to sync social post: ${e.message}")
         }
     }
+
+    suspend fun saveScheduledEmailToCloud(userId: String, email: com.example.data.model.ScheduledEmail) {
+        if (userId.isBlank()) return
+        val db = firestore ?: return
+        try {
+            val docRef = db.collection("users")
+                .document(userId)
+                .collection("scheduled_emails")
+                .document(email.id)
+
+            val data = hashMapOf(
+                "id" to email.id,
+                "recipientTo" to email.recipientTo,
+                "recipientCc" to email.recipientCc,
+                "subject" to email.subject,
+                "body" to email.body,
+                "scheduledTimeEpoch" to email.scheduledTimeEpoch,
+                "scheduledTimeFormatted" to email.scheduledTimeFormatted,
+                "status" to email.status,
+                "createdAt" to email.createdAt,
+                "updatedAt" to System.currentTimeMillis()
+            )
+            docRef.set(data, SetOptions.merge()).await()
+            Log.d("FirestoreService", "Scheduled email synced to Firestore: ${email.subject} for ${email.scheduledTimeFormatted}")
+        } catch (e: Exception) {
+            Log.e("FirestoreService", "Failed to sync scheduled email: ${e.message}")
+        }
+    }
+
+    suspend fun saveNotificationPreferencesToCloud(userId: String, prefs: com.example.data.model.NotificationPreferences) {
+        if (userId.isBlank()) return
+        val db = firestore ?: return
+        try {
+            val docRef = db.collection("users")
+                .document(userId)
+                .collection("settings")
+                .document("notifications")
+
+            val data = hashMapOf(
+                "notifyUrgent" to prefs.notifyUrgent,
+                "notifyWork" to prefs.notifyWork,
+                "notifyPersonal" to prefs.notifyPersonal,
+                "notifyInvestors" to prefs.notifyInvestors,
+                "notifyPromotions" to prefs.notifyPromotions,
+                "notifySocial" to prefs.notifySocial,
+                "quietHoursEnabled" to prefs.quietHoursEnabled,
+                "quietHoursStart" to prefs.quietHoursStart,
+                "quietHoursEnd" to prefs.quietHoursEnd,
+                "updatedAt" to System.currentTimeMillis()
+            )
+            docRef.set(data, SetOptions.merge()).await()
+        } catch (e: Exception) {
+            Log.e("FirestoreService", "Failed to sync notification preferences: ${e.message}")
+        }
+    }
 }

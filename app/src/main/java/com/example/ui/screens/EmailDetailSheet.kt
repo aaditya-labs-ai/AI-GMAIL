@@ -254,31 +254,69 @@ fun EmailDetailSheet(
                             )
                         }
 
-                        if (email.aiSummary == null) {
-                            Button(
-                                onClick = { viewModel.summarizeSelectedEmail() },
-                                enabled = !isAnalyzing,
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue, contentColor = Color.White),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                modifier = Modifier
-                                    .height(32.dp)
-                                    .testTag("btn_summarize_email")
-                            ) {
-                                if (isAnalyzing) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(14.dp),
-                                        color = Color.White,
-                                        strokeWidth = 2.dp
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (email.aiSummary != null) {
+                                OutlinedButton(
+                                    onClick = { viewModel.summarizeEmailThreadWithGemini(email) },
+                                    enabled = !isAnalyzing && !uiState.isSummarizingThread,
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp).testTag("btn_refresh_summary")
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Regenerate with Gemini",
+                                        tint = ElectricBlue,
+                                        modifier = Modifier.size(12.dp)
                                     )
-                                } else {
-                                    Text("Summarize", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Regenerate", fontSize = 10.sp, color = ElectricBlue, fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Button(
+                                    onClick = { viewModel.summarizeEmailThreadWithGemini(email) },
+                                    enabled = !isAnalyzing && !uiState.isSummarizingThread,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue, contentColor = Color.White),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier
+                                        .height(32.dp)
+                                        .testTag("btn_summarize_email")
+                                ) {
+                                    if (isAnalyzing || uiState.isSummarizingThread) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Text("AI Summarize", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
                     }
 
-                    if (email.aiSummary != null) {
+                    if (isAnalyzing || uiState.isSummarizingThread) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                color = ElectricBlue,
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                "Gemini AI is analyzing email thread & extracting action items...",
+                                fontSize = 12.sp,
+                                color = ElectricBlue,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            )
+                        }
+                    } else if (email.aiSummary != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = email.aiSummary,

@@ -1,5 +1,11 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -27,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +42,10 @@ import com.example.data.api.GeminiApiClient
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.AssistantViewModel
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +57,7 @@ fun ComposeEmailSheet(
     initialBody: String = "",
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     var to by remember { mutableStateOf(initialTo) }
     var subject by remember { mutableStateOf(initialSubject) }
     var body by remember { mutableStateOf(initialBody) }
@@ -56,7 +68,50 @@ fun ComposeEmailSheet(
     var selectedTone by remember { mutableStateOf("Executive & Direct") }
     var isGeneratingWithAi by remember { mutableStateOf(false) }
     var suggestedSubjects by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showScheduleDialog by remember { mutableStateOf(false) }
+    var isListeningSpeech by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+
+    // Speech Recognizer Launcher
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        isListeningSpeech = false
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            val spokenMatches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spokenText = spokenMatches?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                body = if (body.isBlank()) spokenText else "$body $spokenText"
+                Toast.makeText(context, "Dictation added to email body!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // Permission Launcher for Microphone
+    val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            try {
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your email body message...")
+                }
+                isListeningSpeech = true
+                speechLauncher.launch(intent)
+            } catch (e: Exception) {
+                isListeningSpeech = false
+                Toast.makeText(context, "Speech recognition not available on this device", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Microphone permission required for speech-to-text dictation", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun startSpeechDictation() {
+        recordAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
 
     // Sync initial values if changed externally
     LaunchedEffect(initialTo, initialSubject, initialBody) {
@@ -91,7 +146,21 @@ fun ComposeEmailSheet(
                     color = Text3dPrimary
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Schedule Send Button
+                    OutlinedButton(
+                        onClick = { showScheduleDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ElectricBlue),
+                        border = BorderStroke(1.dp, ElectricBlue.copy(alpha = 0.5f)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(36.dp).testTag("btn_schedule_send")
+                    ) {
+                        Icon(Icons.Outlined.ScheduleSend, contentDescription = "Schedule Send", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Schedule", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
                     FilledTonalButton(
                         onClick = {
                             viewModel.sendEmail(to, subject, body, isDraft = true)
@@ -105,7 +174,7 @@ fun ComposeEmailSheet(
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.height(36.dp)
                     ) {
-                        Text("Draft", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Draft", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     Box(
@@ -581,26 +650,63 @@ fun ComposeEmailSheet(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Body field
-            OutlinedTextField(
-                value = body,
-                onValueChange = { body = it },
-                label = { Text("Compose email body...", color = Text3dSecondary) },
-                minLines = 8,
-                maxLines = 16,
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Light3dCardSubtle,
-                    unfocusedContainerColor = Light3dCardSubtle,
-                    focusedTextColor = Text3dPrimary,
-                    unfocusedTextColor = Text3dPrimary,
-                    focusedBorderColor = ElectricBlue,
-                    unfocusedBorderColor = Color.Transparent
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("input_compose_body")
-            )
+            // Body field with Dictation Action
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = { body = it },
+                    label = { Text("Compose email body...", color = Text3dSecondary) },
+                    minLines = 8,
+                    maxLines = 16,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Light3dCardSubtle,
+                        unfocusedContainerColor = Light3dCardSubtle,
+                        focusedTextColor = Text3dPrimary,
+                        unfocusedTextColor = Text3dPrimary,
+                        focusedBorderColor = ElectricBlue,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("input_compose_body")
+                )
+
+                // Voice Dictation Button inside body card
+                IconButton(
+                    onClick = { startSpeechDictation() },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(8.dp)
+                        .size(36.dp)
+                        .shadow(2.dp, RoundedCornerShape(10.dp), spotColor = if (isListeningSpeech) GmailCoral else ElectricBlue)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isListeningSpeech) GmailCoral else ElectricBlueLight)
+                        .testTag("btn_voice_dictation")
+                ) {
+                    Icon(
+                        imageVector = if (isListeningSpeech) Icons.Default.Mic else Icons.Outlined.Mic,
+                        contentDescription = "Voice Dictate Email Body",
+                        tint = if (isListeningSpeech) Color.White else ElectricBlue,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            if (isListeningSpeech) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(GmailCoralLight)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(12.dp), color = GmailCoral, strokeWidth = 2.dp)
+                    Text("Listening to voice input... speak clearly into microphone", fontSize = 11.sp, color = GmailCoral, fontWeight = FontWeight.SemiBold)
+                }
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -630,5 +736,198 @@ fun ComposeEmailSheet(
 
             Spacer(modifier = Modifier.height(30.dp))
         }
+
+        // Schedule Send Dialog
+        if (showScheduleDialog) {
+            ScheduleSendDialog(
+                recipientTo = to,
+                subject = subject,
+                onDismiss = { showScheduleDialog = false },
+                onScheduleConfirm = { scheduledEpoch, formattedString ->
+                    showScheduleDialog = false
+                    if (to.isNotBlank() && subject.isNotBlank()) {
+                        viewModel.scheduleSendEmail(
+                            to = to,
+                            subject = subject,
+                            body = body,
+                            scheduledTimeEpoch = scheduledEpoch,
+                            scheduledTimeFormatted = formattedString
+                        )
+                        onDismiss()
+                    } else {
+                        Toast.makeText(context, "Please enter recipient and subject before scheduling", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+        }
     }
 }
+
+@Composable
+fun ScheduleSendDialog(
+    recipientTo: String,
+    subject: String,
+    onDismiss: () -> Unit,
+    onScheduleConfirm: (scheduledEpoch: Long, formattedString: String) -> Unit
+) {
+    val cal = Calendar.getInstance()
+    
+    // Preset 1: Tomorrow morning 8:00 AM
+    val tomorrowMorning = Calendar.getInstance().apply {
+        add(Calendar.DAY_OF_YEAR, 1)
+        set(Calendar.HOUR_OF_DAY, 8)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+    }
+    
+    // Preset 2: Tomorrow afternoon 2:00 PM
+    val tomorrowAfternoon = Calendar.getInstance().apply {
+        add(Calendar.DAY_OF_YEAR, 1)
+        set(Calendar.HOUR_OF_DAY, 14)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+    }
+
+    // Preset 3: Monday morning 9:00 AM
+    val mondayMorning = Calendar.getInstance().apply {
+        add(Calendar.DAY_OF_YEAR, if (get(Calendar.DAY_OF_WEEK) == Calendar.SATURDAY) 2 else if (get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 1 else (Calendar.MONDAY - get(Calendar.DAY_OF_WEEK) + 7) % 7)
+        set(Calendar.HOUR_OF_DAY, 9)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+    }
+
+    // Preset 4: Quick Test (in 30 seconds)
+    val testQuick = Calendar.getInstance().apply {
+        add(Calendar.SECOND, 30)
+    }
+
+    val dateFormat = SimpleDateFormat("EEE, MMM d • h:mm a", Locale.getDefault())
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Default.Schedule, contentDescription = null, tint = ElectricBlue)
+                Text("Schedule Send", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Text3dPrimary)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Pick a date and time to automatically send this email in background via Firestore sync & worker trigger:",
+                    fontSize = 12.sp,
+                    color = Text3dSecondary,
+                    lineHeight = 16.sp
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Option 1
+                Surface(
+                    onClick = {
+                        onScheduleConfirm(tomorrowMorning.timeInMillis, dateFormat.format(tomorrowMorning.time))
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Light3dCardSubtle,
+                    border = BorderStroke(1.dp, Light3dBorder),
+                    modifier = Modifier.fillMaxWidth().testTag("opt_tomorrow_morning")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Tomorrow Morning", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Text3dPrimary)
+                            Text(dateFormat.format(tomorrowMorning.time), fontSize = 11.sp, color = Text3dMuted)
+                        }
+                        Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = null, tint = Text3dMuted, modifier = Modifier.size(12.dp))
+                    }
+                }
+
+                // Option 2
+                Surface(
+                    onClick = {
+                        onScheduleConfirm(tomorrowAfternoon.timeInMillis, dateFormat.format(tomorrowAfternoon.time))
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Light3dCardSubtle,
+                    border = BorderStroke(1.dp, Light3dBorder),
+                    modifier = Modifier.fillMaxWidth().testTag("opt_tomorrow_afternoon")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Tomorrow Afternoon", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Text3dPrimary)
+                            Text(dateFormat.format(tomorrowAfternoon.time), fontSize = 11.sp, color = Text3dMuted)
+                        }
+                        Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = null, tint = Text3dMuted, modifier = Modifier.size(12.dp))
+                    }
+                }
+
+                // Option 3
+                Surface(
+                    onClick = {
+                        onScheduleConfirm(mondayMorning.timeInMillis, dateFormat.format(mondayMorning.time))
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Light3dCardSubtle,
+                    border = BorderStroke(1.dp, Light3dBorder),
+                    modifier = Modifier.fillMaxWidth().testTag("opt_monday_morning")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Monday Morning", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Text3dPrimary)
+                            Text(dateFormat.format(mondayMorning.time), fontSize = 11.sp, color = Text3dMuted)
+                        }
+                        Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = null, tint = Text3dMuted, modifier = Modifier.size(12.dp))
+                    }
+                }
+
+                // Option 4: Quick Demo (30s dispatch)
+                Surface(
+                    onClick = {
+                        onScheduleConfirm(testQuick.timeInMillis, "In 30 seconds (${dateFormat.format(testQuick.time)})")
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    color = ElectricBlueLight,
+                    border = BorderStroke(1.dp, ElectricBlue.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth().testTag("opt_quick_dispatch")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("⚡ Quick Background Demo (in 30s)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = ElectricBlue)
+                            Text("Triggers worker dispatch in 30 seconds", fontSize = 11.sp, color = ElectricBlue)
+                        }
+                        Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = null, tint = ElectricBlue, modifier = Modifier.size(12.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Text3dSecondary)
+            }
+        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+
