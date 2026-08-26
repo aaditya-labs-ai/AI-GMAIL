@@ -132,8 +132,8 @@ fun EmailDetailSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color.White,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = Light3dBorder) },
+        containerColor = AuraCard,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = AuraBorder) },
         modifier = Modifier.fillMaxHeight(0.94f)
     ) {
         Column(

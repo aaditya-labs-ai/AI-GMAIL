@@ -316,6 +316,7 @@ class AssistantRepository(
                 return options.take(3)
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             android.util.Log.e("AssistantRepository", "analyzeEmailForSmartReplies error: ${e.message}")
         }
 

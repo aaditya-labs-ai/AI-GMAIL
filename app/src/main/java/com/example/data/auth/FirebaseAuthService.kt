@@ -47,7 +47,7 @@ class FirebaseAuthService(private val context: Context) {
                     false
                 }
                 if (!initialized) {
-                    val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { "dummy_local_key" }
+                    val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { "<REDACTED>" }
                     val projectId = BuildConfig.FIREBASE_PROJECT_ID.ifBlank { "ai-studio-gmail-assistant" }
                     val appId = BuildConfig.FIREBASE_APPLICATION_ID.ifBlank { "com.aistudio.gmailassistant.kdqpxz" }
                     val options = com.google.firebase.FirebaseOptions.Builder()
@@ -144,7 +144,7 @@ class FirebaseAuthService(private val context: Context) {
 
             val effectiveClientId = webClientId?.takeIf { it.isNotBlank() }
                 ?: BuildConfig.GOOGLE_WEB_CLIENT_ID.takeIf { it.isNotBlank() && !it.startsWith("YOUR_") }
-                ?: "default-client-id"
+                ?: "<REDACTED>"
 
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)

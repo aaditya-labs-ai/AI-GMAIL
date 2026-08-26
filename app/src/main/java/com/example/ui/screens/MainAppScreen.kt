@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -9,6 +10,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -18,6 +20,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.AssistantScreen
@@ -27,8 +30,8 @@ import com.example.ui.viewmodel.AssistantViewModel
 fun MainAppScreen(
     viewModel: AssistantViewModel = viewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val authUserState by viewModel.authUserState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val authUserState by viewModel.authUserState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.aiStatusMessage) {
@@ -41,13 +44,13 @@ fun MainAppScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(Light3dBackground),
+            .background(AuraBg),
         snackbarHost = {
             SnackbarHost(snackbarHostState) { data ->
                 Snackbar(
-                    containerColor = Text3dPrimary,
+                    containerColor = AuraDark,
                     contentColor = Color.White,
-                    actionColor = SkyBlue,
+                    actionColor = AuraAccent,
                     shape = RoundedCornerShape(16.dp),
                     snackbarData = data
                 )
@@ -59,164 +62,136 @@ fun MainAppScreen(
                     .fillMaxWidth()
                     .shadow(
                         elevation = 16.dp,
-                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
                         ambientColor = ShadowAmbient,
                         spotColor = ShadowSpot
                     ),
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                color = Color.White,
-                tonalElevation = 6.dp
+                color = AuraBg,
+                border = BorderStroke(1.dp, AuraBorder)
             ) {
                 NavigationBar(
-                    containerColor = Color.Transparent,
-                    contentColor = Text3dSecondary,
+                    containerColor = AuraBg,
+                    contentColor = AuraDark,
                     tonalElevation = 0.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    // 1. Inbox
                     NavigationBarItem(
                         selected = uiState.currentScreen is AssistantScreen.Inbox,
                         onClick = { viewModel.setScreen(AssistantScreen.Inbox) },
                         icon = {
-                            BadgedBox(badge = {
-                                if (uiState.unreadCount > 0) {
-                                    Badge(
-                                        containerColor = GmailCoral,
-                                        contentColor = Color.White
-                                    ) {
-                                        Text("${uiState.unreadCount}", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }) {
-                                Icon(
-                                    if (uiState.currentScreen is AssistantScreen.Inbox) Icons.Filled.Inbox else Icons.Outlined.Inbox,
-                                    contentDescription = "Inbox"
-                                )
-                            }
+                            Icon(
+                                if (uiState.currentScreen is AssistantScreen.Inbox) Icons.Filled.Inbox else Icons.Outlined.Inbox,
+                                contentDescription = "Inbox",
+                                modifier = Modifier.size(24.dp)
+                            )
                         },
-                        label = { Text("Inbox", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ElectricBlue,
-                            selectedTextColor = ElectricBlue,
-                            indicatorColor = ElectricBlueLight,
-                            unselectedIconColor = Text3dMuted,
-                            unselectedTextColor = Text3dMuted
+                            selectedIconColor = AuraDark,
+                            selectedTextColor = AuraDark,
+                            indicatorColor = AuraCardSelected,
+                            unselectedIconColor = AuraMuted,
+                            unselectedTextColor = AuraMuted
                         ),
                         modifier = Modifier.testTag("nav_inbox")
                     )
 
+                    // 2. Drafts
                     NavigationBarItem(
                         selected = uiState.currentScreen is AssistantScreen.ColdMailStudio,
                         onClick = { viewModel.setScreen(AssistantScreen.ColdMailStudio) },
                         icon = {
                             Icon(
-                                if (uiState.currentScreen is AssistantScreen.ColdMailStudio) Icons.Filled.EditNote else Icons.Outlined.EditNote,
-                                contentDescription = "Cold Mail"
+                                Icons.Outlined.Description,
+                                contentDescription = "Drafts",
+                                modifier = Modifier.size(22.dp)
                             )
                         },
-                        label = { Text("Cold Mail", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Purple3d,
-                            selectedTextColor = Purple3d,
-                            indicatorColor = Purple3dLight,
-                            unselectedIconColor = Text3dMuted,
-                            unselectedTextColor = Text3dMuted
+                            selectedIconColor = AuraDark,
+                            selectedTextColor = AuraDark,
+                            indicatorColor = AuraCardSelected,
+                            unselectedIconColor = AuraMuted,
+                            unselectedTextColor = AuraMuted
                         ),
-                        modifier = Modifier.testTag("nav_cold_mail")
+                        modifier = Modifier.testTag("nav_drafts")
                     )
 
-                    NavigationBarItem(
-                        selected = uiState.currentScreen is AssistantScreen.AutomationStudio,
-                        onClick = { viewModel.setScreen(AssistantScreen.AutomationStudio) },
-                        icon = {
-                            Icon(
-                                if (uiState.currentScreen is AssistantScreen.AutomationStudio) Icons.Filled.AutoMode else Icons.Outlined.AutoMode,
-                                contentDescription = "Automations"
-                            )
-                        },
-                        label = { Text("Automate", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Emerald3d,
-                            selectedTextColor = Emerald3d,
-                            indicatorColor = Emerald3dLight,
-                            unselectedIconColor = Text3dMuted,
-                            unselectedTextColor = Text3dMuted
-                        ),
-                        modifier = Modifier.testTag("nav_automations")
-                    )
-
+                    // 3. Sent
                     NavigationBarItem(
                         selected = uiState.currentScreen is AssistantScreen.SocialHub,
                         onClick = { viewModel.setScreen(AssistantScreen.SocialHub) },
                         icon = {
                             Icon(
-                                if (uiState.currentScreen is AssistantScreen.SocialHub) Icons.Filled.Hub else Icons.Outlined.Hub,
-                                contentDescription = "Social Hub"
+                                Icons.Outlined.Send,
+                                contentDescription = "Sent",
+                                modifier = Modifier.size(22.dp)
                             )
                         },
-                        label = { Text("Socials", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ElectricBlue,
-                            selectedTextColor = ElectricBlue,
-                            indicatorColor = ElectricBlueLight,
-                            unselectedIconColor = Text3dMuted,
-                            unselectedTextColor = Text3dMuted
+                            selectedIconColor = AuraDark,
+                            selectedTextColor = AuraDark,
+                            indicatorColor = AuraCardSelected,
+                            unselectedIconColor = AuraMuted,
+                            unselectedTextColor = AuraMuted
                         ),
-                        modifier = Modifier.testTag("nav_social_hub")
+                        modifier = Modifier.testTag("nav_sent")
                     )
 
+                    // 4. Center AI Copilot
                     NavigationBarItem(
                         selected = uiState.currentScreen is AssistantScreen.AICopilot,
                         onClick = { viewModel.setScreen(AssistantScreen.AICopilot) },
                         icon = {
-                            Icon(
-                                if (uiState.currentScreen is AssistantScreen.AICopilot) Icons.Filled.Forum else Icons.Outlined.Forum,
-                                contentDescription = "Copilot"
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (uiState.currentScreen is AssistantScreen.AICopilot) AuraAccent else AuraCardSelected)
+                                    .border(1.dp, AuraBorder, RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "AI",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (uiState.currentScreen is AssistantScreen.AICopilot) Color.White else AuraAccent
+                                )
+                            }
                         },
-                        label = { Text("Copilot", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Purple3d,
-                            selectedTextColor = Purple3d,
-                            indicatorColor = Purple3dLight,
-                            unselectedIconColor = Text3dMuted,
-                            unselectedTextColor = Text3dMuted
+                            selectedIconColor = AuraAccent,
+                            selectedTextColor = AuraAccent,
+                            indicatorColor = Color.Transparent,
+                            unselectedIconColor = AuraMuted,
+                            unselectedTextColor = AuraMuted
                         ),
                         modifier = Modifier.testTag("nav_copilot")
+                    )
+
+                    // 5. Account / Profile
+                    NavigationBarItem(
+                        selected = false,
+                        onClick = { viewModel.setAccountDialogVisible(true) },
+                        icon = {
+                            Icon(
+                                Icons.Outlined.Person,
+                                contentDescription = "Profile",
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = AuraDark,
+                            selectedTextColor = AuraDark,
+                            indicatorColor = AuraCardSelected,
+                            unselectedIconColor = AuraMuted,
+                            unselectedTextColor = AuraMuted
+                        ),
+                        modifier = Modifier.testTag("nav_profile")
                     )
                 }
             }
         },
-        floatingActionButton = {
-            if (uiState.currentScreen is AssistantScreen.Inbox) {
-                // 3D Elevated Pill FAB with Gradient & Raised Shadow
-                Box(
-                    modifier = Modifier
-                        .shadow(
-                            elevation = 12.dp,
-                            shape = RoundedCornerShape(24.dp),
-                            ambientColor = ShadowBlueGlow,
-                            spotColor = ElectricBlue
-                        )
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(Gradient3dPrimary)
-                        .border(
-                            1.dp,
-                            Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.5f), Color.Transparent)),
-                            RoundedCornerShape(24.dp)
-                        )
-                ) {
-                    ExtendedFloatingActionButton(
-                        onClick = { viewModel.setComposeOpen(true) },
-                        containerColor = Color.Transparent,
-                        contentColor = Color.White,
-                        elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
-                        icon = { Icon(Icons.Default.Edit, contentDescription = "Compose Email", tint = Color.White) },
-                        text = { Text("Compose Email", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp) },
-                        modifier = Modifier.testTag("fab_compose_email")
-                    )
-                }
-            }
-        }
+        floatingActionButton = {}
     ) { innerPadding ->
         Box(
             modifier = Modifier

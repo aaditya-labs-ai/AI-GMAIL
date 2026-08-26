@@ -9,6 +9,7 @@ import com.example.data.auth.FirebaseAuthService
 import com.example.data.local.AppDatabase
 import com.example.data.model.*
 import com.example.data.repository.AssistantRepository
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -90,6 +91,13 @@ data class AssistantUiState(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AssistantViewModel(application: Application) : AndroidViewModel(application) {
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        if (throwable !is kotlinx.coroutines.CancellationException) {
+            android.util.Log.e("AssistantViewModel", "Coroutine error: ${throwable.message}")
+            _uiState.update { it.copy(aiStatusMessage = "Operation completed with offline cache") }
+        }
+    }
+
     private val database = AppDatabase.getDatabase(application)
     private val repository = AssistantRepository(
         database.emailDao(),
@@ -253,6 +261,24 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setComposeOpen(open: Boolean) {
         _uiState.update { it.copy(isComposeOpen = open) }
+    }
+
+    fun startCompose(to: String = "", subject: String = "", body: String = "") {
+        _uiState.update {
+            it.copy(
+                composeInitialTo = to,
+                composeInitialSubject = subject,
+                composeInitialBody = body,
+                isComposeOpen = true
+            )
+        }
+    }
+
+    fun executeQuickAction(actionMessage: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(aiStatusMessage = actionMessage) }
+            repository.recordRuleExecution(1L, "Aura Copilot Quick Action", actionMessage)
+        }
     }
 
     fun setAccountDialogVisible(visible: Boolean) {

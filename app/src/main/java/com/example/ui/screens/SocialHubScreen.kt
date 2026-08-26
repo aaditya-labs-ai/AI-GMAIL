@@ -27,6 +27,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.SocialAccount
 import com.example.data.model.SocialOutreachItem
 import com.example.data.model.SocialPlatform
@@ -40,8 +41,8 @@ fun SocialHubScreen(
     uiState: com.example.ui.viewmodel.AssistantUiState,
     modifier: Modifier = Modifier
 ) {
-    val accounts by viewModel.socialAccounts.collectAsState()
-    val outreachList by viewModel.socialOutreachList.collectAsState()
+    val accounts by viewModel.socialAccounts.collectAsStateWithLifecycle()
+    val outreachList by viewModel.socialOutreachList.collectAsStateWithLifecycle()
     val clipboardManager = LocalClipboardManager.current
 
     var selectedPlatform by remember { mutableStateOf(SocialPlatform.LINKEDIN) }

@@ -1,6 +1,6 @@
 {
-  "name": "Gmail Assistant",
-  "description": "Personal AI Gmail and outreach assistant to read, write, send, automate email tasks, craft world-class cold mail, and manage connected social media.",
+  "name": "Aura Mail",
+  "description": "Aura Mail: AI-powered Gmail assistant with intelligent inbox synthesis, executive copilot, smart cold outreach, and automated workflows.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -16,10 +16,11 @@ class GmailAssistantApp : Application() {
                     false
                 }
                 if (!initialized) {
+                    val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { "<REDACTED>" }
                     val options = FirebaseOptions.Builder()
                         .setApplicationId("com.aistudio.gmailassistant.kdqpxz")
                         .setProjectId("ai-studio-gmail-assistant")
-                        .setApiKey("AIzaSyDummyKeyForLocalInitialization0001")
+                        .setApiKey(apiKey)
                         .build()
                     FirebaseApp.initializeApp(this, options)
                     Log.d("GmailAssistantApp", "Initialized FirebaseApp with configured options")

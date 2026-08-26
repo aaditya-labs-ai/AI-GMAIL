@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.AutomationLog
 import com.example.data.model.AutomationRule
 import com.example.ui.theme.*
@@ -39,8 +40,8 @@ fun AutomationScreen(
     uiState: com.example.ui.viewmodel.AssistantUiState,
     modifier: Modifier = Modifier
 ) {
-    val rules by viewModel.automationRules.collectAsState()
-    val logs by viewModel.automationLogs.collectAsState()
+    val rules by viewModel.automationRules.collectAsStateWithLifecycle()
+    val logs by viewModel.automationLogs.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableStateOf(0) }
     var showAddRuleDialog by remember { mutableStateOf(false) }
 

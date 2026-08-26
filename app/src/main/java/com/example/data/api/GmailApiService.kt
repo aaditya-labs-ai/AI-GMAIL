@@ -11,7 +11,9 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -103,40 +105,55 @@ interface GmailApiService {
         @Path("userId") userId: String = "me",
         @Query("maxResults") maxResults: Int = 20,
         @Query("pageToken") pageToken: String? = null,
-        @Query("q") query: String? = null,
-        @Header("Authorization") authHeader: String? = null
+        @Query("q") query: String? = null
     ): GmailThreadListResponse
 
     @GET("gmail/v1/users/{userId}/threads/{id}")
     suspend fun getThread(
         @Path("userId") userId: String = "me",
         @Path("id") threadId: String,
-        @Query("format") format: String = "full",
-        @Header("Authorization") authHeader: String? = null
+        @Query("format") format: String = "full"
     ): GmailThreadDetailResponse
 
     @GET("gmail/v1/users/{userId}/messages")
     suspend fun listMessages(
         @Path("userId") userId: String = "me",
         @Query("maxResults") maxResults: Int = 25,
-        @Query("q") query: String? = null,
-        @Header("Authorization") authHeader: String? = null
+        @Query("q") query: String? = null
     ): GmailThreadListResponse
 
     @GET("gmail/v1/users/{userId}/messages/{id}")
     suspend fun getMessage(
         @Path("userId") userId: String = "me",
         @Path("id") messageId: String,
-        @Query("format") format: String = "full",
-        @Header("Authorization") authHeader: String? = null
+        @Query("format") format: String = "full"
     ): GmailMessageResponse
 
     @POST("gmail/v1/users/{userId}/messages/send")
     suspend fun sendMessage(
         @Path("userId") userId: String = "me",
-        @Body request: GmailSendMessageRequest,
-        @Header("Authorization") authHeader: String? = null
+        @Body request: GmailSendMessageRequest
     ): GmailSendResponse
+}
+
+/**
+ * Centralized OkHttp Interceptor for injecting Gmail OAuth 2.0 Bearer tokens.
+ * Completely eliminates ad-hoc token parameter passing in Retrofit service declarations.
+ */
+class GmailOAuthInterceptor : Interceptor {
+    @Volatile
+    var bearerToken: String? = null
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val original = chain.request()
+        val token = bearerToken
+        val requestBuilder = original.newBuilder()
+        if (!token.isNullOrBlank() && token != "<REDACTED>") {
+            val formatted = if (token.startsWith("Bearer ", ignoreCase = true)) token else "Bearer $token"
+            requestBuilder.header("Authorization", formatted)
+        }
+        return chain.proceed(requestBuilder.build())
+    }
 }
 
 // --- Gmail Retrofit Client & Database Sync Manager ---
@@ -144,18 +161,25 @@ interface GmailApiService {
 object GmailApiClient {
     private const val BASE_URL = "https://gmail.googleapis.com/"
 
+    val authInterceptor = GmailOAuthInterceptor()
+
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
         .build()
+
+    // Security Hardening: Redact sensitive Authorization headers and disable body payload logging in release
+    private val logging = HttpLoggingInterceptor().apply {
+        redactHeader("Authorization")
+        redactHeader("x-goog-api-key")
+        level = if (com.example.BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
+    }
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
-        .addInterceptor(HttpLoggingInterceptor().apply {
-            redactHeader("Authorization")
-            level = HttpLoggingInterceptor.Level.NONE
-        })
+        .addInterceptor(authInterceptor)
+        .addInterceptor(logging)
         .build()
 
     val service: GmailApiService by lazy {
@@ -178,15 +202,17 @@ object GmailApiClient {
     ): Result<Int> = withContext(Dispatchers.IO) {
         try {
             onProgress(0.1f, "Connecting to Gmail API...")
-            val authHeader = authToken?.let { if (it.startsWith("Bearer ")) it else "Bearer $it" }
+            
+            // Set token in centralized interceptor
+            val token = authToken?.takeIf { it.length > 20 }
+            authInterceptor.bearerToken = token
 
             // If token is provided, attempt live Gmail API fetch; otherwise simulate network sync with local cache validation
-            if (authHeader != null && authHeader.length > 20) {
+            if (token != null) {
                 onProgress(0.3f, "Fetching recent threads from Gmail...")
                 val threadListResponse = service.listThreads(
                     userId = "me",
-                    maxResults = 10,
-                    authHeader = authHeader
+                    maxResults = 10
                 )
 
                 val threadItems = threadListResponse.threads.orEmpty()
@@ -199,8 +225,7 @@ object GmailApiClient {
                     try {
                         val threadDetail = service.getThread(
                             userId = "me",
-                            threadId = item.id,
-                            authHeader = authHeader
+                            threadId = item.id
                         )
 
                         val msgs = threadDetail.messages.orEmpty()

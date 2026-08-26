@@ -8,7 +8,8 @@
 
     <application
         android:name=".GmailAssistantApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false"
         android:hardwareAccelerated="true"
         android:largeHeap="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

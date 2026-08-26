@@ -1,17 +1,74 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
-    android:width="108dp"
-    android:height="108dp"
+    android:width="120dp"
+    android:height="120dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 1. FEDORA HAT SHADOW ON ENAMEL -->
+    <!-- 1. BASE BACKGROUND & OUTER GOLD RIM -->
+    <path
+        android:pathData="M54,4 A50,50 0 1,0 54,104 A50,50 0 1,0 54,4 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="18"
+                android:startY="6"
+                android:endX="90"
+                android:endY="102"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FBE6A2" />
+                <item android:offset="0.3" android:color="#D4AF37" />
+                <item android:offset="0.7" android:color="#AA7C1E" />
+                <item android:offset="1.0" android:color="#F7DF94" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Inner Gold Bezel -->
+    <path
+        android:pathData="M54,6 A48,48 0 1,0 54,102 A48,48 0 1,0 54,6 Z"
+        android:fillColor="#8C6314" />
+
+    <!-- 2. VIBRANT ORANGE ENAMEL BACKGROUND DISC -->
+    <path
+        android:pathData="M54,7 A47,47 0 1,0 54,101 A47,47 0 1,0 54,7 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54"
+                android:startY="7"
+                android:endX="54"
+                android:endY="101"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF7A1A" />
+                <item android:offset="0.4" android:color="#E8590C" />
+                <item android:offset="1.0" android:color="#C2410C" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Enamel Radial Highlight Shimmer -->
+    <path
+        android:pathData="M54,7 A47,47 0 1,0 54,101 A47,47 0 1,0 54,7 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54"
+                android:startY="22"
+                android:endX="54"
+                android:endY="101"
+                android:type="radial"
+                android:gradientRadius="47">
+                <item android:offset="0.0" android:color="#33FFE0B2" />
+                <item android:offset="0.6" android:color="#10FF9800" />
+                <item android:offset="1.0" android:color="#00000000" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 3. FEDORA HAT SHADOW ON ENAMEL -->
     <path
         android:pathData="M23,59 C32,54 77,53 85,58 C85,60 76,64 54,64 C32,64 23,61 23,59 Z"
         android:fillColor="#33000000" />
 
-    <!-- 2. GOLD CURSIVE 'G' - BASE EMBOSSED METAL & GROOVES -->
-    <!-- Gold 'G' Outer Drop Shadow -->
+    <!-- 4. GOLD CURSIVE 'G' - BASE EMBOSSED METAL & GROOVES -->
     <path
         android:pathData="M52,48 C43,48 33,54 32,66 C31,77 41,84 54,84 C62,84 68,80 72,75 L72,83 L77,83 L77,69 L62,69 L62,73 L70,73 C67,78 61,80 54,80 C44,80 37,74 38,66 C39,57 46,52 54,52 C61,52 66,55 68,58 L73,54 C68,49 61,48 52,48 Z"
         android:fillColor="#4D3B10" />
@@ -54,8 +111,7 @@
         android:pathData="M73.5,75 A1.2,1.2 0 1,0 73.5,77.4 A1.2,1.2 0 1,0 73.5,75 Z"
         android:fillColor="#7A560B" />
 
-    <!-- 3. FEDORA HAT - FELT TEXTURE & SHAPING -->
-    <!-- Hat Crown Base -->
+    <!-- 5. FEDORA HAT - FELT TEXTURE & SHAPING -->
     <path
         android:pathData="M37,49 C37,36 43,26 53,25 C55,25 57,25 58,26 C64,28 70,36 71,49 Z"
         android:fillColor="#1F2328" />
@@ -124,8 +180,7 @@
         </aapt:attr>
     </path>
 
-    <!-- 4. AI BLUE ROBOT PIN ON HAT (TOP LEFT - AS IN OFFICIAL UPLOADED LOGO) -->
-    <!-- Robot Head Outline / Gold Bezel -->
+    <!-- 6. AI BLUE ROBOT PIN ON HAT (TOP LEFT) -->
     <path
         android:pathData="M39,30 C37,30 35,32 35,35 C35,38 37,40 40,40 C43,40 45,38 45,35 C45,32 43,30 40,30 Z"
         android:fillColor="#D4AF37" />
@@ -181,8 +236,7 @@
         android:strokeWidth="0.5"
         android:strokeColor="#FFFFFF" />
 
-    <!-- 5. GOLD CURSIVE 'mail' SCRIPT INSIDE 'G' -->
-    <!-- 'm' letter -->
+    <!-- 7. GOLD CURSIVE 'mail' SCRIPT INSIDE 'G' -->
     <path
         android:pathData="M48,64 C48,60 50,58 52,58 C53.5,58 54.5,59.5 55,61 C55.8,59.2 57.2,58 59,58 C61,58 62,60 62,64 L62,67.5 L60.2,67.5 L60.2,64 C60.2,61.5 59.5,60 58,60 C56.5,60 55.8,61.5 55.8,64 L55.8,67.5 L54,67.5 L54,64 C54,61.5 53.2,60 51.8,60 C50.5,60 49.8,61.5 49.8,64 L49.8,67.5 L48,67.5 Z">
         <aapt:attr name="android:fillColor">
@@ -199,7 +253,6 @@
         </aapt:attr>
     </path>
 
-    <!-- 'a' letter -->
     <path
         android:pathData="M63.5,64.2 C63.5,61.5 64.8,59.5 67.2,59.5 C68.5,59.5 69.5,60.5 70,61.5 L70,59.8 L71.8,59.8 L71.8,67.5 L70.2,67.5 L70.2,66.2 C69.5,67.2 68.4,67.8 67.2,67.8 C64.8,67.8 63.5,66 63.5,64.2 Z M70,63.8 C70,62 69,61 67.8,61 C66.5,61 65.5,62 65.5,63.8 C65.5,65.5 66.5,66.4 67.8,66.4 C69,66.4 70,65.5 70,63.8 Z">
         <aapt:attr name="android:fillColor">
@@ -216,7 +269,6 @@
         </aapt:attr>
     </path>
 
-    <!-- 'i' letter -->
     <path
         android:pathData="M73.5,60 L75.2,60 L75.2,67.5 L73.5,67.5 Z">
         <aapt:attr name="android:fillColor">
@@ -231,12 +283,10 @@
             </gradient>
         </aapt:attr>
     </path>
-    <!-- Dot on 'i' -->
     <path
         android:pathData="M74.35,57.2 A0.9,0.9 0 1,0 74.35,59 A0.9,0.9 0 1,0 74.35,57.2 Z"
         android:fillColor="#FFF8D6" />
 
-    <!-- 'l' letter with tall ascender loop -->
     <path
         android:pathData="M77,53.5 L78.8,53.5 L78.8,65.5 C78.8,66.5 79.3,67 80.2,67 L80.8,67 L80.8,68.2 C79.8,68.4 78.5,68.2 77.8,67.2 C77.2,66.4 77,65.2 77,63.8 Z">
         <aapt:attr name="android:fillColor">
@@ -254,5 +304,3 @@
     </path>
 
 </vector>
-
-

@@ -34,6 +34,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.ui.components.*
 import com.example.ui.theme.*
@@ -46,7 +47,7 @@ fun ColdMailScreen(
     uiState: com.example.ui.viewmodel.AssistantUiState,
     modifier: Modifier = Modifier
 ) {
-    val campaigns by viewModel.coldCampaigns.collectAsState()
+    val campaigns by viewModel.coldCampaigns.collectAsStateWithLifecycle()
     val clipboardManager = LocalClipboardManager.current
     var selectedTab by remember { mutableStateOf(0) }
     var bannerPromptInput by remember { mutableStateOf("Futuristic clean gradient header for AI enterprise email campaign") }

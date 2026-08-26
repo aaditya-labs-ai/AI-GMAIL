@@ -8,14 +8,15 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.Path
-import retrofit2.http.Query
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 
@@ -72,13 +73,31 @@ data class GeminiResponse(
     val candidates: List<GeminiCandidate>?
 )
 
+/**
+ * Secure Gemini REST API definition.
+ * Eliminates API key leakage via URL query parameters (?key=) by routing keys through secure header interceptors.
+ */
 interface DynamicGeminiApi {
     @POST("v1beta/models/{model}:generateContent")
     suspend fun generateContent(
         @Path("model") model: String,
-        @Query("key") apiKey: String,
         @Body request: GeminiRequest
     ): GeminiResponse
+}
+
+/**
+ * Centralized OkHttp Interceptor that attaches the API key via the standard x-goog-api-key header.
+ */
+class GeminiAuthInterceptor : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val original = chain.request()
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        val requestBuilder = original.newBuilder()
+        if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY" && apiKey != "<REDACTED>") {
+            requestBuilder.header("x-goog-api-key", apiKey)
+        }
+        return chain.proceed(requestBuilder.build())
+    }
 }
 
 object GeminiApiClient {
@@ -94,15 +113,19 @@ object GeminiApiClient {
         .add(KotlinJsonAdapterFactory())
         .build()
 
+    // Security Hardening: Redact sensitive headers & disable request body logging in release builds
     private val logging = HttpLoggingInterceptor().apply {
         redactHeader("Authorization")
-        level = HttpLoggingInterceptor.Level.NONE
+        redactHeader("x-goog-api-key")
+        redactHeader("X-Goog-Api-Key")
+        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
     }
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
+        .addInterceptor(GeminiAuthInterceptor())
         .addInterceptor(logging)
         .build()
 
@@ -127,7 +150,7 @@ object GeminiApiClient {
         systemInstruction: String = "You are the personal AI executive email and cold outreach assistant for Aditya Rai (kumaradityarai0005@gmail.com). You specialize in world-class, high-converting cold outreach, concise executive replies, automated task execution, and multi-channel social media engagement."
     ): String = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY" || apiKey == "<REDACTED>") {
             return@withContext generateLocalSmartFallback(prompt, enableHighThinking, useGoogleMapsGrounding)
         }
 
@@ -167,11 +190,11 @@ object GeminiApiClient {
                 )
             )
 
-            val response = api.generateContent(targetModel, apiKey, request)
+            val response = api.generateContent(targetModel, request)
             val generatedText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             generatedText?.trim() ?: generateLocalSmartFallback(prompt, enableHighThinking, useGoogleMapsGrounding)
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: Exception) {
+            // Safely fallback without leaking stack traces or sensitive user data
             generateLocalSmartFallback(prompt, enableHighThinking, useGoogleMapsGrounding)
         }
     }
@@ -215,7 +238,7 @@ object GeminiApiClient {
      */
     suspend fun analyzeImage(bitmap: Bitmap, prompt: String = "Analyze this document/business card/screenshot for cold outreach. Extract key contact details, company name, value hooks, and action items."): String = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY" || apiKey == "<REDACTED>") {
             return@withContext """
                 [Gemini 3.1 Pro Vision Analysis]
                 • Contact Identified: Sarah Jenkins, VP of Growth
@@ -240,10 +263,10 @@ object GeminiApiClient {
                 generationConfig = GeminiGenerationConfig(temperature = 0.4f)
             )
 
-            val response = api.generateContent(MODEL_PRO_COMPLEX, apiKey, request)
+            val response = api.generateContent(MODEL_PRO_COMPLEX, request)
             val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             text?.trim() ?: "Image analyzed successfully. Extracted key outreach targets and details."
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             "Analysis complete. Extracted outreach contact points and recommended custom email sequence."
         }
     }
@@ -253,7 +276,7 @@ object GeminiApiClient {
      */
     suspend fun transcribeAudio(audioBytes: ByteArray, mimeType: String = "audio/mp4"): String = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY" || apiKey == "<REDACTED>") {
             return@withContext "Voice Memo Transcribed: 'Hey Aditya, please send a quick follow-up to the Sequoia partner we met at the AI summit. Mention our 42% cold response conversion metric and offer a coffee chat next Tuesday.'"
         }
 
@@ -272,10 +295,10 @@ object GeminiApiClient {
                 generationConfig = GeminiGenerationConfig(temperature = 0.2f)
             )
 
-            val response = api.generateContent(MODEL_FLASH_GENERAL, apiKey, request)
+            val response = api.generateContent(MODEL_FLASH_GENERAL, request)
             val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             text?.trim() ?: "Audio transcribed successfully."
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             "Transcribed voice memo into cold email draft."
         }
     }
@@ -289,7 +312,7 @@ object GeminiApiClient {
         aspectRatio: String = "1:1"
     ): String = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY" || apiKey == "<REDACTED>") {
             return@withContext "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80"
         }
 
@@ -306,7 +329,7 @@ object GeminiApiClient {
                 )
             )
 
-            val response = api.generateContent(MODEL_PRO_IMAGE, apiKey, request)
+            val response = api.generateContent(MODEL_PRO_IMAGE, request)
             val part = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()
             val imageBase64 = part?.inlineData?.data
             if (imageBase64 != null) {
@@ -314,7 +337,7 @@ object GeminiApiClient {
             } else {
                 "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80"
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80"
         }
     }
