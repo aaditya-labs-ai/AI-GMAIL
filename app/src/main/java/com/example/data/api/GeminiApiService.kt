@@ -2,6 +2,7 @@ package com.example.data.api
 
 import android.graphics.Bitmap
 import android.util.Base64
+import android.util.Log
 import com.example.BuildConfig
 import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
@@ -12,12 +13,15 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.Path
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 
 data class GeminiInlineData(
@@ -100,6 +104,35 @@ class GeminiAuthInterceptor : Interceptor {
     }
 }
 
+/**
+ * BUG FIX N2: Retry interceptor with exponential backoff for transient failures
+ */
+class RetryInterceptor(private val maxRetries: Int = 3) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        var attempt = 0
+        var lastException: Exception? = null
+
+        while (attempt < maxRetries) {
+            try {
+                return chain.proceed(chain.request())
+            } catch (e: SocketTimeoutException) {
+                lastException = e
+                attempt++
+                if (attempt >= maxRetries) throw e
+                val delayMs = (100 * Math.pow(2.0, (attempt - 1).toDouble())).toLong()
+                Thread.sleep(delayMs)
+            } catch (e: IOException) {
+                lastException = e
+                attempt++
+                if (attempt >= maxRetries) throw e
+                val delayMs = (100 * Math.pow(2.0, (attempt - 1).toDouble())).toLong()
+                Thread.sleep(delayMs)
+            }
+        }
+        throw lastException ?: IOException("Max retries exceeded")
+    }
+}
+
 object GeminiApiClient {
     private const val BASE_URL = "https://generativelanguage.googleapis.com/"
 
@@ -126,6 +159,7 @@ object GeminiApiClient {
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .addInterceptor(GeminiAuthInterceptor())
+        .addInterceptor(RetryInterceptor(maxRetries = 3)) // BUG FIX N2: Add retry logic
         .addInterceptor(logging)
         .build()
 
@@ -157,7 +191,6 @@ object GeminiApiClient {
         try {
             val generationConfig = when {
                 enableHighThinking -> {
-                    // For thinking mode: use gemini-3.1-pro-preview with thinkingLevel HIGH and DO NOT set maxOutputTokens
                     GeminiGenerationConfig(
                         thinkingConfig = GeminiThinkingConfig(thinkingLevel = "high")
                     )
@@ -191,10 +224,28 @@ object GeminiApiClient {
             )
 
             val response = api.generateContent(targetModel, request)
+            // BUG FIX N5: Validate response before returning
             val generatedText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-            generatedText?.trim() ?: generateLocalSmartFallback(prompt, enableHighThinking, useGoogleMapsGrounding)
-        } catch (_: Exception) {
-            // Safely fallback without leaking stack traces or sensitive user data
+            if (generatedText.isNullOrBlank()) {
+                Log.w("GeminiApiClient", "Empty response from Gemini API")
+                return@withContext generateLocalSmartFallback(prompt, enableHighThinking, useGoogleMapsGrounding)
+            }
+            generatedText.trim()
+        } catch (e: HttpException) {
+            // BUG FIX E3: Handle specific HTTP exceptions
+            Log.e("GeminiApiClient", "HTTP error ${e.code()}: ${e.message()}")
+            if (e.code() == 401 || e.code() == 403) {
+                return@withContext "Authentication error. Please re-authenticate."
+            }
+            generateLocalSmartFallback(prompt, enableHighThinking, useGoogleMapsGrounding)
+        } catch (e: SocketTimeoutException) {
+            Log.e("GeminiApiClient", "Socket timeout: ${e.message}")
+            generateLocalSmartFallback(prompt, enableHighThinking, useGoogleMapsGrounding)
+        } catch (e: IOException) {
+            Log.e("GeminiApiClient", "Network error: ${e.message}")
+            generateLocalSmartFallback(prompt, enableHighThinking, useGoogleMapsGrounding)
+        } catch (e: Exception) {
+            Log.e("GeminiApiClient", "Unexpected error in callGemini", e)
             generateLocalSmartFallback(prompt, enableHighThinking, useGoogleMapsGrounding)
         }
     }
@@ -266,7 +317,8 @@ object GeminiApiClient {
             val response = api.generateContent(MODEL_PRO_COMPLEX, request)
             val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             text?.trim() ?: "Image analyzed successfully. Extracted key outreach targets and details."
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e("GeminiApiClient", "Image analysis error", e)
             "Analysis complete. Extracted outreach contact points and recommended custom email sequence."
         }
     }
@@ -298,7 +350,8 @@ object GeminiApiClient {
             val response = api.generateContent(MODEL_FLASH_GENERAL, request)
             val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             text?.trim() ?: "Audio transcribed successfully."
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e("GeminiApiClient", "Audio transcription error", e)
             "Transcribed voice memo into cold email draft."
         }
     }
@@ -308,7 +361,7 @@ object GeminiApiClient {
      */
     suspend fun generateImage(
         prompt: String,
-        imageSize: String = "1K", // "1K", "2K", "4K"
+        imageSize: String = "1K",
         aspectRatio: String = "1:1"
     ): String = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
@@ -337,15 +390,18 @@ object GeminiApiClient {
             } else {
                 "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80"
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e("GeminiApiClient", "Image generation error", e)
             "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80"
         }
     }
 
     private fun bitmapToBase64(bitmap: Bitmap): String {
-        val outputStream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
-        return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+        // BUG FIX C2: Properly close ByteArrayOutputStream using use() extension
+        return ByteArrayOutputStream().use { outputStream ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+            Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+        }
     }
 
     private fun generateLocalSmartFallback(
