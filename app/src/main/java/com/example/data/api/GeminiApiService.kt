@@ -147,7 +147,7 @@ object GeminiApiClient {
         model: String = MODEL_FLASH_GENERAL,
         enableHighThinking: Boolean = false,
         useGoogleMapsGrounding: Boolean = false,
-        systemInstruction: String = "You are the personal AI executive email and cold outreach assistant for Aditya Rai (kumaradityarai0005@gmail.com). You specialize in world-class, high-converting cold outreach, concise executive replies, automated task execution, and multi-channel social media engagement."
+        systemInstruction: String = "You are the personal AI executive email and cold outreach assistant for Aditya Rai (kumaradityarai0005@gmail.com). You specialize in world-class, high-converting cold outreach campaigns, automated email sequences, and multi-channel engagement strategies. Your core mission is to help Aditya craft hyper-personalized, data-driven outreach that resonates with C-level executives and decision-makers. Focus on value-first positioning, quantifiable metrics (42% response conversion), and consultative selling angles that bypass typical vendor noise."
     ): String = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY" || apiKey == "<REDACTED>") {
@@ -236,7 +236,7 @@ object GeminiApiClient {
     /**
      * Analyze image attachments (pitch decks, business cards, screenshots) with gemini-3.1-pro-preview
      */
-    suspend fun analyzeImage(bitmap: Bitmap, prompt: String = "Analyze this document/business card/screenshot for cold outreach. Extract key contact details, company name, value hooks, and action items."): String = withContext(Dispatchers.IO) {
+    suspend fun analyzeImage(bitmap: Bitmap, prompt: String = "Analyze this document/business card/screenshot for cold outreach. Extract key contact details, company name, value hooks, and actionable insights for personalized email outreach campaigns."): String = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY" || apiKey == "<REDACTED>") {
             return@withContext """
@@ -277,7 +277,7 @@ object GeminiApiClient {
     suspend fun transcribeAudio(audioBytes: ByteArray, mimeType: String = "audio/mp4"): String = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY" || apiKey == "<REDACTED>") {
-            return@withContext "Voice Memo Transcribed: 'Hey Aditya, please send a quick follow-up to the Sequoia partner we met at the AI summit. Mention our 42% cold response conversion metric and offer a coffee chat next Tuesday.'"
+            return@withContext "Voice Memo Transcribed: 'Hey Aditya, please send a quick follow-up to the Sequoia partner we met at the AI summit. Mention our 42% cold response conversion metric and suggest a brief 15-min call next week to discuss partnership opportunities in the autonomous agent space.'"
         }
 
         try {
@@ -367,7 +367,7 @@ object GeminiApiClient {
             isThinking -> {
                 """
                 🧠 [Deep Strategic Thinking & Pitch Synthesis]
-                Analysis: The recipient receives ~50+ vendor pitches weekly. To stand out, the message must bypass typical sales cadence clichés, highlight a concrete quantitative hook (42% response rate), and offer zero-friction next steps.
+                Analysis: The recipient receives ~50+ vendor pitches weekly. To stand out, the message must bypass typical sales cadence clichés, highlight a concrete quantitative hook (42% resp rate), and position consultative value over transactional gain.
 
                 Sequence Recommendation:
                 1. Subject: Aditya Rai / Outbound velocity at [TargetCompany]
@@ -401,7 +401,7 @@ object GeminiApiClient {
                 """.trimIndent()
             }
             lower.contains("summarize") || lower.contains("summary") -> {
-                "Summary: The sender proposes a strategic collaboration and is requesting a brief 20-minute discussion to review product architecture and next steps.\n\nAction Items:\n• Confirm calendar availability\n• Review attached briefing deck\n• Send updated roadmap"
+                "Summary: The sender proposes a strategic collaboration and is requesting a brief 20-minute discussion to review product architecture and next steps.\n\nAction Items:\n• Confirm availability for upcoming deep-dive meeting\n• Prepare competitive analysis and architectural comparisons\n• Schedule product roadmap review session"
             }
             lower.contains("reply") || lower.contains("draft") -> {
                 """
@@ -422,7 +422,7 @@ object GeminiApiClient {
                 "Hi [Name], loved your recent post on AI developer ecosystems. We built an autonomous Gmail & outreach assistant with 42% reply conversion. Would love to connect and share notes!"
             }
             lower.contains("twitter") || lower.contains("x") || lower.contains("dm") -> {
-                "Hey [Name]! Big fan of your work on agent tooling. Just launched our personal Gmail AI assistant with multi-channel outreach sync. Would love your candid feedback if you're open to a test build: https://github.com/kumaradityarai"
+                "Hey [Name]! Big fan of your work on agent tooling. Just launched our personal Gmail AI assistant with multi-channel outreach sync. Would love your candid feedback if you're open to a quick 15-min call!"
             }
             else -> {
                 "I have processed your request for Aditya's inbox. All tasks, high-priority email classifications, and cold email sequences are optimized and ready for review."
