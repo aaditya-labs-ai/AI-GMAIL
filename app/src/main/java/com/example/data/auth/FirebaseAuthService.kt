@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.UUID
 
 data class AuthUserState(
@@ -26,9 +27,10 @@ data class AuthUserState(
     val displayName: String = "Aditya Rai",
     val email: String = "kumaradityarai0005@gmail.com",
     val photoUrl: String? = null,
-    val isGoogleLinked: Boolean = true,
-    val providerId: String = "google.com",
-    val lastSignInTime: Long = System.currentTimeMillis()
+    val isGoogleLinked: Boolean = false,
+    val providerId: String = "",
+    val lastSignInTime: Long = System.currentTimeMillis(),
+    val tokenExpiredAt: Long? = null
 )
 
 sealed class AuthResult {
@@ -44,18 +46,22 @@ class FirebaseAuthService(private val context: Context) {
                 val initialized = try {
                     com.google.firebase.FirebaseApp.initializeApp(context) != null
                 } catch (e: Exception) {
+                    Log.w("FirebaseAuthService", "FirebaseApp init error: ${e.message}")
                     false
                 }
                 if (!initialized) {
-                    val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { "<REDACTED>" }
-                    val projectId = BuildConfig.FIREBASE_PROJECT_ID.ifBlank { "ai-studio-gmail-assistant" }
-                    val appId = BuildConfig.FIREBASE_APPLICATION_ID.ifBlank { "com.aistudio.gmailassistant.kdqpxz" }
-                    val options = com.google.firebase.FirebaseOptions.Builder()
-                        .setApplicationId(appId)
-                        .setProjectId(projectId)
-                        .setApiKey(apiKey)
-                        .build()
-                    com.google.firebase.FirebaseApp.initializeApp(context, options)
+                    val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { null }
+                    val projectId = BuildConfig.FIREBASE_PROJECT_ID.ifBlank { null }
+                    val appId = BuildConfig.FIREBASE_APPLICATION_ID.ifBlank { null }
+                    
+                    if (apiKey != null && projectId != null && appId != null) {
+                        val options = com.google.firebase.FirebaseOptions.Builder()
+                            .setApplicationId(appId)
+                            .setProjectId(projectId)
+                            .setApiKey(apiKey)
+                            .build()
+                        com.google.firebase.FirebaseApp.initializeApp(context, options)
+                    }
                 }
             }
             FirebaseAuth.getInstance()
@@ -74,29 +80,24 @@ class FirebaseAuthService(private val context: Context) {
             auth?.addAuthStateListener { firebaseAuth ->
                 val user = firebaseAuth.currentUser
                 if (user != null) {
+                    // BUG FIX S2: Only set authenticated if actual user exists
                     _userState.value = AuthUserState(
                         isAuthenticated = true,
                         uid = user.uid,
-                        displayName = user.displayName ?: "Aditya Rai",
-                        email = user.email ?: "kumaradityarai0005@gmail.com",
+                        displayName = user.displayName ?: "User",
+                        email = user.email ?: "",
                         photoUrl = user.photoUrl?.toString(),
-                        isGoogleLinked = true,
+                        isGoogleLinked = user.providerData.any { it.providerId == "google.com" },
                         providerId = "google.com",
                         lastSignInTime = System.currentTimeMillis()
                     )
                 } else {
-                    _userState.value = AuthUserState(
-                        isAuthenticated = true,
-                        uid = "aditya_rai_001",
-                        displayName = "Aditya Rai",
-                        email = "kumaradityarai0005@gmail.com",
-                        isGoogleLinked = true,
-                        providerId = "google.com"
-                    )
+                    // BUG FIX A6: Return false authenticated state when no user
+                    _userState.value = AuthUserState(isAuthenticated = false)
                 }
             }
         } catch (e: Exception) {
-            Log.w("FirebaseAuthService", "AuthStateListener notice: ${e.message}")
+            Log.w("FirebaseAuthService", "AuthStateListener error: ${e.message}")
         }
     }
 
@@ -107,44 +108,36 @@ class FirebaseAuthService(private val context: Context) {
                 AuthUserState(
                     isAuthenticated = true,
                     uid = user.uid,
-                    displayName = user.displayName ?: "Aditya Rai",
-                    email = user.email ?: "kumaradityarai0005@gmail.com",
+                    displayName = user.displayName ?: "User",
+                    email = user.email ?: "",
                     photoUrl = user.photoUrl?.toString(),
-                    isGoogleLinked = true,
+                    isGoogleLinked = user.providerData.any { it.providerId == "google.com" },
                     providerId = "google.com"
                 )
             } else {
-                AuthUserState(
-                    isAuthenticated = true,
-                    uid = "aditya_rai_001",
-                    displayName = "Aditya Rai",
-                    email = "kumaradityarai0005@gmail.com",
-                    isGoogleLinked = true,
-                    providerId = "google.com"
-                )
+                // BUG FIX S2: Return unauthenticated state
+                AuthUserState(isAuthenticated = false)
             }
         } catch (e: Exception) {
-            AuthUserState(
-                isAuthenticated = true,
-                uid = "aditya_rai_001",
-                displayName = "Aditya Rai",
-                email = "kumaradityarai0005@gmail.com",
-                isGoogleLinked = true,
-                providerId = "google.com"
-            )
+            Log.e("FirebaseAuthService", "Error getting current user state", e)
+            AuthUserState(isAuthenticated = false)
         }
     }
 
     suspend fun signInWithGoogle(webClientId: String? = null): AuthResult {
         return try {
+            // BUG FIX A5: Generate nonce with SecureRandom for cryptographic strength
             val rawNonce = UUID.randomUUID().toString()
-            val md = MessageDigest.getInstance("SHA-256")
-            val digest = md.digest(rawNonce.toByteArray())
-            val hashedNonce = digest.fold("") { str, it -> str + "%02x".format(it) }
+            val bytes = ByteArray(32)
+            SecureRandom().nextBytes(bytes)
+            val hashedNonce = bytes.fold("") { str, it -> str + "%02x".format(it) }
 
             val effectiveClientId = webClientId?.takeIf { it.isNotBlank() }
                 ?: BuildConfig.GOOGLE_WEB_CLIENT_ID.takeIf { it.isNotBlank() && !it.startsWith("YOUR_") }
-                ?: "<REDACTED>"
+            
+            if (effectiveClientId == null) {
+                return AuthResult.Error("Google Web Client ID not configured. Configure in BuildConfig or pass as parameter.")
+            }
 
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)
@@ -170,14 +163,19 @@ class FirebaseAuthService(private val context: Context) {
                 val firebaseUser = authResult?.user
 
                 if (firebaseUser != null) {
+                    // BUG FIX A2: Store token expiration time
+                    val tokenTask = firebaseUser.getIdToken(false).await()
+                    val expirationTime = System.currentTimeMillis() + (60 * 60 * 1000) // 1 hour
+
                     val state = AuthUserState(
                         isAuthenticated = true,
                         uid = firebaseUser.uid,
-                        displayName = firebaseUser.displayName ?: googleIdTokenCredential.displayName ?: "Aditya Rai",
+                        displayName = firebaseUser.displayName ?: googleIdTokenCredential.displayName ?: "User",
                         email = firebaseUser.email ?: googleIdTokenCredential.id,
                         photoUrl = firebaseUser.photoUrl?.toString() ?: googleIdTokenCredential.profilePictureUri?.toString(),
                         isGoogleLinked = true,
-                        providerId = "google.com"
+                        providerId = "google.com",
+                        tokenExpiredAt = expirationTime
                     )
                     _userState.value = state
                     AuthResult.Success(state)
@@ -190,18 +188,19 @@ class FirebaseAuthService(private val context: Context) {
         } catch (e: GetCredentialCancellationException) {
             Log.w("FirebaseAuthService", "User cancelled Google Sign-in")
             AuthResult.Cancelled
+        } catch (e: GetCredentialException) {
+            // BUG FIX A3: Specific exception handling for credential errors
+            Log.e("FirebaseAuthService", "GetCredentialException: ${e.message}", e)
+            when {
+                e.message?.contains("401", ignoreCase = true) == true -> 
+                    AuthResult.Error("Authentication expired. Please sign in again.")
+                e.message?.contains("network", ignoreCase = true) == true ->
+                    AuthResult.Error("Network error. Please check your connection.")
+                else -> AuthResult.Error("Sign-in failed: ${e.message}")
+            }
         } catch (e: Exception) {
-            Log.e("FirebaseAuthService", "Google Sign-in: ${e.message}", e)
-            val fallbackState = AuthUserState(
-                isAuthenticated = true,
-                uid = "firebase_google_aditya_${System.currentTimeMillis()}",
-                displayName = "Aditya Rai",
-                email = "kumaradityarai0005@gmail.com",
-                isGoogleLinked = true,
-                providerId = "google.com"
-            )
-            _userState.value = fallbackState
-            AuthResult.Success(fallbackState)
+            Log.e("FirebaseAuthService", "Google Sign-in error", e)
+            AuthResult.Error("Sign-in failed: ${e.message ?: "Unknown error"}")
         }
     }
 
@@ -212,14 +211,7 @@ class FirebaseAuthService(private val context: Context) {
         } catch (e: Exception) {
             Log.e("FirebaseAuthService", "Error signing out", e)
         } finally {
-            _userState.value = AuthUserState(
-                isAuthenticated = false,
-                uid = "",
-                displayName = "Guest User",
-                email = "not_linked@gmail.com",
-                isGoogleLinked = false,
-                providerId = ""
-            )
+            _userState.value = AuthUserState(isAuthenticated = false)
         }
     }
 
@@ -232,5 +224,17 @@ class FirebaseAuthService(private val context: Context) {
             isGoogleLinked = true,
             providerId = "google.com"
         )
+    }
+
+    // BUG FIX A2: Check if current token is expired
+    suspend fun ensureTokenFresh(): Boolean {
+        return try {
+            val user = auth?.currentUser ?: return false
+            val tokenResult = user.getIdToken(true).await() // Force refresh
+            return tokenResult != null
+        } catch (e: Exception) {
+            Log.e("FirebaseAuthService", "Token refresh failed", e)
+            false
+        }
     }
 }
