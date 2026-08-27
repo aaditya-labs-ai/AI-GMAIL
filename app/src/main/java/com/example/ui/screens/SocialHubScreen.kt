@@ -41,8 +41,8 @@ fun SocialHubScreen(
     uiState: com.example.ui.viewmodel.AssistantUiState,
     modifier: Modifier = Modifier
 ) {
-    val accounts by viewModel.socialAccounts.collectAsStateWithLifecycle()
-    val outreachList by viewModel.socialOutreachList.collectAsStateWithLifecycle()
+    val accounts by viewModel.socialAccounts.collectAsStateWithLifecycle(emptyList())
+    val outreachList by viewModel.socialOutreach.collectAsStateWithLifecycle(emptyList())
     val clipboardManager = LocalClipboardManager.current
 
     var selectedPlatform by remember { mutableStateOf(SocialPlatform.LINKEDIN) }
@@ -103,7 +103,7 @@ fun SocialHubScreen(
                             color = Text3dPrimary
                         )
                         Text(
-                            text = "${accounts.count { it.isConnected }} connected channels for Aditya",
+                            text = "${accounts.count { it.isConnected }} connected channels",
                             fontSize = 12.sp,
                             color = Text3dSecondary
                         )

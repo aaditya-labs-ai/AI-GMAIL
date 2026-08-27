@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,12 +31,9 @@ fun AccountAuthDialog(
     isAuthenticating: Boolean,
     onSignInWithGoogle: () -> Unit,
     onSignOut: () -> Unit,
-    onLinkCustomEmail: (String) -> Unit,
+    onLinkCustomEmail: ((String) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
-    var showCustomInput by remember { mutableStateOf(false) }
-    var customEmailInput by remember { mutableStateOf("") }
-
     Dialog(onDismissRequest = onDismiss) {
         Box(
             modifier = Modifier
@@ -105,7 +101,7 @@ fun AccountAuthDialog(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // 3D Avatar
+                // Avatar
                 Box(
                     modifier = Modifier
                         .size(72.dp)
@@ -118,7 +114,7 @@ fun AccountAuthDialog(
                     Text(
                         text = if (authUserState.displayName.isNotBlank()) {
                             authUserState.displayName.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("")
-                        } else "AR",
+                        } else if (authUserState.isAuthenticated) "G" else "?",
                         color = Color.White,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 24.sp
@@ -128,17 +124,19 @@ fun AccountAuthDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = authUserState.displayName,
+                    text = if (authUserState.isAuthenticated) authUserState.displayName.ifBlank { "Google User" } else "Not Signed In",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     color = Text3dPrimary
                 )
 
-                Text(
-                    text = authUserState.email,
-                    fontSize = 13.sp,
-                    color = Text3dSecondary
-                )
+                if (authUserState.isAuthenticated && authUserState.email.isNotBlank()) {
+                    Text(
+                        text = authUserState.email,
+                        fontSize = 13.sp,
+                        color = Text3dSecondary
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -146,20 +144,25 @@ fun AccountAuthDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Box(
                         modifier = Modifier
-                            .shadow(2.dp, RoundedCornerShape(10.dp), spotColor = Emerald3d)
+                            .shadow(2.dp, RoundedCornerShape(10.dp), spotColor = if (authUserState.isAuthenticated) Emerald3d else GmailCoral)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Emerald3dLight)
-                            .border(1.dp, Emerald3d.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            .background(if (authUserState.isAuthenticated) Emerald3dLight else GmailCoralLight)
+                            .border(1.dp, (if (authUserState.isAuthenticated) Emerald3d else GmailCoral).copy(alpha = 0.3f), RoundedCornerShape(10.dp))
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Emerald3d))
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(if (authUserState.isAuthenticated) Emerald3d else GmailCoral)
+                            )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Firebase Google Auth Linked",
+                                text = if (authUserState.isAuthenticated) "Firebase Google Auth Active" else "No Active Session",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF065F46)
+                                color = if (authUserState.isAuthenticated) Color(0xFF065F46) else GmailCoral
                             )
                         }
                     }
@@ -190,14 +193,24 @@ fun AccountAuthDialog(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Credential Manager:", fontSize = 12.sp, color = Text3dSecondary)
-                            Text("Active & Encrypted", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Emerald3d)
+                            Text(
+                                text = if (authUserState.isAuthenticated) "Active & Encrypted" else "Standby",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (authUserState.isAuthenticated) Emerald3d else Text3dMuted
+                            )
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Gmail Read/Write Scope:", fontSize = 12.sp, color = Text3dSecondary)
-                            Text("Authorized", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ElectricBlue)
+                            Text("Firestore Data Isolation:", fontSize = 12.sp, color = Text3dSecondary)
+                            Text(
+                                text = if (authUserState.isAuthenticated) "Enforced (UID: ${authUserState.uid.take(6)}...)" else "Guarded",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = ElectricBlue
+                            )
                         }
                     }
                 }
@@ -205,132 +218,72 @@ fun AccountAuthDialog(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 // Google Sign In Button
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .shadow(
-                            elevation = 6.dp,
-                            shape = RoundedCornerShape(14.dp),
-                            ambientColor = ShadowBlueGlow,
-                            spotColor = ElectricBlue
-                        )
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Gradient3dPrimary)
-                        .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                        .clickable(enabled = !isAuthenticating) { onSignInWithGoogle() }
-                        .testTag("btn_google_signin_action"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isAuthenticating) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Connecting Google Account...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.AccountCircle,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Sign in with Google",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Custom Email Link option
-                if (!showCustomInput) {
-                    TextButton(
-                        onClick = { showCustomInput = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Link a different Gmail account",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = ElectricBlue
-                        )
-                    }
-                } else {
-                    Column(
+                if (!authUserState.isAuthenticated) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .height(48.dp)
+                            .shadow(
+                                elevation = 6.dp,
+                                shape = RoundedCornerShape(14.dp),
+                                ambientColor = ShadowBlueGlow,
+                                spotColor = ElectricBlue
+                            )
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Gradient3dPrimary)
+                            .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                            .clickable(enabled = !isAuthenticating) { onSignInWithGoogle() }
+                            .testTag("btn_google_signin_action"),
+                        contentAlignment = Alignment.Center
                     ) {
-                        OutlinedTextField(
-                            value = customEmailInput,
-                            onValueChange = { customEmailInput = it },
-                            placeholder = { Text("e.g. name@gmail.com", fontSize = 12.sp, color = Text3dMuted) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = Light3dCardSubtle,
-                                unfocusedContainerColor = Light3dCardSubtle,
-                                focusedTextColor = Text3dPrimary,
-                                unfocusedTextColor = Text3dPrimary,
-                                focusedBorderColor = ElectricBlue,
-                                unfocusedBorderColor = Color.Transparent
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            FilledTonalButton(
-                                onClick = { showCustomInput = false },
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Cancel", fontSize = 11.sp)
+                        if (isAuthenticating) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Connecting Google Account...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
-                            Button(
-                                onClick = {
-                                    if (customEmailInput.isNotBlank()) {
-                                        onLinkCustomEmail(customEmailInput)
-                                        showCustomInput = false
-                                    }
-                                },
-                                enabled = customEmailInput.isNotBlank(),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue, contentColor = Color.White),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Link Gmail", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.AccountCircle,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Sign in with Google",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
                             }
                         }
                     }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Sign out button
-                TextButton(
-                    onClick = onSignOut,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Sign Out",
-                        color = GmailCoral,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                } else {
+                    // Sign out button
+                    Button(
+                        onClick = onSignOut,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = GmailCoralLight,
+                            contentColor = GmailCoral
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("btn_sign_out")
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sign Out", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
                 }
             }
         }

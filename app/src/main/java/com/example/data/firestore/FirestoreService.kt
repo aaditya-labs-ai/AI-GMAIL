@@ -3,8 +3,10 @@ package com.example.data.firestore
 import android.util.Log
 import com.example.data.model.AutomationRule
 import com.example.data.model.ColdMailCampaign
-import com.example.data.model.EmailEntity
+import com.example.data.model.NotificationPreferences
+import com.example.data.model.ScheduledEmail
 import com.example.data.model.SocialOutreachItem
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.tasks.await
@@ -19,12 +21,35 @@ class FirestoreService {
         }
     }
 
+    private fun getVerifiedCurrentUid(): String? {
+        val auth = try {
+            FirebaseAuth.getInstance()
+        } catch (e: Exception) {
+            null
+        }
+        return auth?.currentUser?.uid?.takeIf { it.isNotBlank() }
+    }
+
+    private fun validateAccess(requestedUserId: String): String {
+        val currentUid = getVerifiedCurrentUid()
+            ?: throw SecurityException("Unauthorized Firestore access: User is not authenticated.")
+        if (requestedUserId.isBlank() || requestedUserId != currentUid) {
+            throw SecurityException("Access Denied: Cannot access data for user '$requestedUserId' from authenticated session '$currentUid'.")
+        }
+        return currentUid
+    }
+
     suspend fun saveCampaignToCloud(userId: String, campaign: ColdMailCampaign) {
-        if (userId.isBlank()) return
+        val verifiedUid = try {
+            validateAccess(userId)
+        } catch (e: SecurityException) {
+            Log.e("FirestoreService", "Security violation: ${e.message}")
+            return
+        }
         val db = firestore ?: return
         try {
             val docRef = db.collection("users")
-                .document(userId)
+                .document(verifiedUid)
                 .collection("campaigns")
                 .document(if (campaign.id > 0) campaign.id.toString() else System.currentTimeMillis().toString())
 
@@ -47,18 +72,23 @@ class FirestoreService {
                 "updatedAt" to System.currentTimeMillis()
             )
             docRef.set(data, SetOptions.merge()).await()
-            Log.d("FirestoreService", "Campaign synced to Firestore: ${campaign.title}")
+            Log.d("FirestoreService", "Campaign synced to Firestore securely for user $verifiedUid")
         } catch (e: Exception) {
             Log.e("FirestoreService", "Failed to sync campaign: ${e.message}")
         }
     }
 
     suspend fun saveRuleToCloud(userId: String, rule: AutomationRule) {
-        if (userId.isBlank()) return
+        val verifiedUid = try {
+            validateAccess(userId)
+        } catch (e: SecurityException) {
+            Log.e("FirestoreService", "Security violation: ${e.message}")
+            return
+        }
         val db = firestore ?: return
         try {
             val docRef = db.collection("users")
-                .document(userId)
+                .document(verifiedUid)
                 .collection("automation_rules")
                 .document(if (rule.id > 0) rule.id.toString() else System.currentTimeMillis().toString())
 
@@ -82,11 +112,16 @@ class FirestoreService {
     }
 
     suspend fun saveSocialPostToCloud(userId: String, post: SocialOutreachItem) {
-        if (userId.isBlank()) return
+        val verifiedUid = try {
+            validateAccess(userId)
+        } catch (e: SecurityException) {
+            Log.e("FirestoreService", "Security violation: ${e.message}")
+            return
+        }
         val db = firestore ?: return
         try {
             val docRef = db.collection("users")
-                .document(userId)
+                .document(verifiedUid)
                 .collection("social_outreach")
                 .document(if (post.id > 0) post.id.toString() else System.currentTimeMillis().toString())
 
@@ -105,12 +140,17 @@ class FirestoreService {
         }
     }
 
-    suspend fun saveScheduledEmailToCloud(userId: String, email: com.example.data.model.ScheduledEmail) {
-        if (userId.isBlank()) return
+    suspend fun saveScheduledEmailToCloud(userId: String, email: ScheduledEmail) {
+        val verifiedUid = try {
+            validateAccess(userId)
+        } catch (e: SecurityException) {
+            Log.e("FirestoreService", "Security violation: ${e.message}")
+            return
+        }
         val db = firestore ?: return
         try {
             val docRef = db.collection("users")
-                .document(userId)
+                .document(verifiedUid)
                 .collection("scheduled_emails")
                 .document(email.id)
 
@@ -127,18 +167,22 @@ class FirestoreService {
                 "updatedAt" to System.currentTimeMillis()
             )
             docRef.set(data, SetOptions.merge()).await()
-            Log.d("FirestoreService", "Scheduled email synced to Firestore: ${email.subject} for ${email.scheduledTimeFormatted}")
         } catch (e: Exception) {
             Log.e("FirestoreService", "Failed to sync scheduled email: ${e.message}")
         }
     }
 
-    suspend fun saveNotificationPreferencesToCloud(userId: String, prefs: com.example.data.model.NotificationPreferences) {
-        if (userId.isBlank()) return
+    suspend fun saveNotificationPreferencesToCloud(userId: String, prefs: NotificationPreferences) {
+        val verifiedUid = try {
+            validateAccess(userId)
+        } catch (e: SecurityException) {
+            Log.e("FirestoreService", "Security violation: ${e.message}")
+            return
+        }
         val db = firestore ?: return
         try {
             val docRef = db.collection("users")
-                .document(userId)
+                .document(verifiedUid)
                 .collection("settings")
                 .document("notifications")
 

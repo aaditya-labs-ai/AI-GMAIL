@@ -54,6 +54,7 @@ fun EmailDetailSheet(
     var selectedAttachmentForPreview by remember { mutableStateOf<EmailAttachment?>(null) }
     var threadQuickReplyText by remember { mutableStateOf("") }
     var isReplyingInThread by remember { mutableStateOf(false) }
+    var pendingSendReplyDraft by remember { mutableStateOf<String?>(null) }
 
     // Parse attachments from email
     val emailAttachments = remember(email.attachmentNames) {
@@ -61,16 +62,18 @@ fun EmailDetailSheet(
     }
 
     // Build thread messages
-    val threadMessages = remember(email) {
+    val threadMessages = remember(email, uiState.userProfile) {
         val list = mutableListOf<EmailThreadMessage>()
         val isSentFolder = email.folder == EmailFolder.SENT
+        val currentUserName = uiState.userProfile.displayName.ifBlank { "You" }
+        val currentUserEmail = uiState.userProfile.email.ifBlank { email.senderEmail }
 
         if (isSentFolder) {
             // Outgoing initial email
             list.add(
                 EmailThreadMessage(
                     id = "msg_${email.id}_out",
-                    senderName = "Aditya Rai",
+                    senderName = currentUserName,
                     senderEmail = email.senderEmail,
                     recipientEmail = email.recipientEmail,
                     timestamp = email.timestamp,
@@ -101,8 +104,8 @@ fun EmailDetailSheet(
                 list.add(
                     EmailThreadMessage(
                         id = "msg_${email.id}_out_prev",
-                        senderName = "Aditya Rai",
-                        senderEmail = "kumaradityarai0005@gmail.com",
+                        senderName = currentUserName,
+                        senderEmail = currentUserEmail,
                         recipientEmail = email.senderEmail,
                         timestamp = email.timestamp,
                         isOutgoing = true,
@@ -330,7 +333,7 @@ fun EmailDetailSheet(
                             HorizontalDivider(color = Light3dBorder)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Action Items for Aditya:",
+                                text = "Action Items:",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
                                 color = ElectricBlue
@@ -485,13 +488,16 @@ fun EmailDetailSheet(
                         }
                     } else {
                         // 3 Context-Aware Quick-Reply Buttons
+                        val userName = uiState.userProfile.displayName.ifBlank { "User" }
+                        val userEmail = uiState.userProfile.email
+                        val sig = "\n\nBest regards,\n$userName${if (userEmail.isNotBlank()) "\n$userEmail" else ""}"
                         val replies = if (uiState.smartReplies.isNotEmpty()) {
                             uiState.smartReplies
                         } else {
                             listOf(
-                                SmartReplyOption("1", "Acknowledge", "acknowledge", "Hi ${email.senderName},\n\nThanks for reaching out! I've received your email and will review the details shortly.\n\nBest regards,\nAditya Rai\nkumaradityarai0005@gmail.com"),
-                                SmartReplyOption("2", "Request Meeting", "meeting", "Hi ${email.senderName},\n\nThanks for following up! Let's schedule a brief 15-minute call to discuss this. Are you available this Thursday afternoon?\n\nBest regards,\nAditya Rai\nkumaradityarai0005@gmail.com"),
-                                SmartReplyOption("3", "Decline", "decline", "Hi ${email.senderName},\n\nThank you for reaching out. We are focusing on active commitments and won't be able to proceed at this time.\n\nBest regards,\nAditya Rai\nkumaradityarai0005@gmail.com")
+                                SmartReplyOption("1", "Acknowledge", "acknowledge", "Hi ${email.senderName},\n\nThanks for reaching out! I've received your email and will review the details shortly.$sig"),
+                                SmartReplyOption("2", "Request Meeting", "meeting", "Hi ${email.senderName},\n\nThanks for following up! Let's schedule a brief 15-minute call to discuss this. Are you available this Thursday afternoon?$sig"),
+                                SmartReplyOption("3", "Decline", "decline", "Hi ${email.senderName},\n\nThank you for reaching out. We are focusing on active commitments and won't be able to proceed at this time.$sig")
                             )
                         }
 
@@ -640,13 +646,7 @@ fun EmailDetailSheet(
                                         // Quick Send Reply button
                                         Button(
                                             onClick = {
-                                                viewModel.sendEmail(
-                                                    to = email.senderEmail,
-                                                    subject = if (email.subject.startsWith("Re:", ignoreCase = true)) email.subject else "Re: ${email.subject}",
-                                                    body = currentDraft,
-                                                    isDraft = false
-                                                )
-                                                onDismiss()
+                                                pendingSendReplyDraft = currentDraft
                                             },
                                             shape = RoundedCornerShape(10.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue, contentColor = Color.White),
@@ -668,6 +668,58 @@ fun EmailDetailSheet(
             }
 
             Spacer(modifier = Modifier.height(30.dp))
+        }
+
+        // Send Reply Confirmation Dialog
+        pendingSendReplyDraft?.let { draftToSend ->
+            AlertDialog(
+                onDismissRequest = { pendingSendReplyDraft = null },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Send, contentDescription = null, tint = ElectricBlue)
+                        Text("Confirm Reply Dispatch", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Text3dPrimary)
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("Send reply to ${email.senderName} (${email.senderEmail})?", fontSize = 13.sp, color = Text3dPrimary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Subject: ${if (email.subject.startsWith("Re:", ignoreCase = true)) email.subject else "Re: ${email.subject}"}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Text3dSecondary)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val draft = draftToSend
+                            pendingSendReplyDraft = null
+                            viewModel.sendEmail(
+                                to = email.senderEmail,
+                                subject = if (email.subject.startsWith("Re:", ignoreCase = true)) email.subject else "Re: ${email.subject}",
+                                body = draft,
+                                isDraft = false
+                            )
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Confirm & Send", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingSendReplyDraft = null }) {
+                        Text("Review", color = Text3dSecondary)
+                    }
+                },
+                containerColor = Color.White,
+                shape = RoundedCornerShape(20.dp)
+            )
         }
     }
 }
@@ -766,7 +818,7 @@ fun EmailThreadMessageCard(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
-                                    text = if (isOutgoing) "Aditya Rai (You)" else message.senderName,
+                                    text = if (isOutgoing) "${message.senderName} (You)" else message.senderName,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp,
                                     color = Text3dPrimary

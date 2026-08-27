@@ -1,5 +1,8 @@
 package com.example.data.api
 
+import android.util.Base64
+import android.util.Log
+import com.example.data.auth.GmailOAuthManager
 import com.example.data.model.EmailCategory
 import com.example.data.model.EmailFolder
 import com.example.data.model.EmailPriority
@@ -18,6 +21,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.*
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 // --- Gmail API Response Models ---
@@ -74,7 +78,8 @@ data class GmailMessagePart(
     @field:Json(name = "mimeType") val mimeType: String? = null,
     @field:Json(name = "filename") val filename: String? = null,
     @field:Json(name = "headers") val headers: List<GmailHeader>? = null,
-    @field:Json(name = "body") val body: GmailMessageBody? = null
+    @field:Json(name = "body") val body: GmailMessageBody? = null,
+    @field:Json(name = "parts") val parts: List<GmailMessagePart>? = null
 )
 
 data class GmailDraftRequest(
@@ -138,17 +143,14 @@ interface GmailApiService {
 
 /**
  * Centralized OkHttp Interceptor for injecting Gmail OAuth 2.0 Bearer tokens.
- * Completely eliminates ad-hoc token parameter passing in Retrofit service declarations.
+ * Intercepts outbound requests and injects current verified OAuth session.
  */
 class GmailOAuthInterceptor : Interceptor {
-    @Volatile
-    var bearerToken: String? = null
-
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        val token = bearerToken
+        val token = GmailOAuthManager.getValidAccessToken()
         val requestBuilder = original.newBuilder()
-        if (!token.isNullOrBlank() && token != "<REDACTED>") {
+        if (!token.isNullOrBlank()) {
             val formatted = if (token.startsWith("Bearer ", ignoreCase = true)) token else "Bearer $token"
             requestBuilder.header("Authorization", formatted)
         }
@@ -156,18 +158,17 @@ class GmailOAuthInterceptor : Interceptor {
     }
 }
 
-// --- Gmail Retrofit Client & Database Sync Manager ---
+// --- Gmail Retrofit Client & Manager ---
 
 object GmailApiClient {
     private const val BASE_URL = "https://gmail.googleapis.com/"
 
-    val authInterceptor = GmailOAuthInterceptor()
+    private val authInterceptor = GmailOAuthInterceptor()
 
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
         .build()
 
-    // Security Hardening: Redact sensitive Authorization headers and disable body payload logging in release
     private val logging = HttpLoggingInterceptor().apply {
         redactHeader("Authorization")
         redactHeader("x-goog-api-key")
@@ -192,112 +193,211 @@ object GmailApiClient {
     }
 
     /**
+     * Recursively extracts and decodes plain-text or HTML message content from nested MIME parts.
+     */
+    fun parseMimeBody(payload: GmailMessagePayload?): String {
+        if (payload == null) return ""
+
+        // 1. Direct body data
+        payload.body?.data?.let { encodedData ->
+            val decoded = decodeBase64Safe(encodedData)
+            if (decoded.isNotBlank()) return decoded
+        }
+
+        // 2. Search parts recursively
+        val parts = payload.parts.orEmpty()
+        return extractBodyFromParts(parts)
+    }
+
+    private fun extractBodyFromParts(parts: List<GmailMessagePart>): String {
+        // First look for text/plain
+        for (part in parts) {
+            if (part.mimeType.equals("text/plain", ignoreCase = true)) {
+                part.body?.data?.let { data ->
+                    val text = decodeBase64Safe(data)
+                    if (text.isNotBlank()) return text
+                }
+            }
+            // Recurse child parts
+            if (!part.parts.isNullOrEmpty()) {
+                val nestedText = extractBodyFromParts(part.parts)
+                if (nestedText.isNotBlank()) return nestedText
+            }
+        }
+
+        // Fallback to text/html with tag cleanup
+        for (part in parts) {
+            if (part.mimeType.equals("text/html", ignoreCase = true)) {
+                part.body?.data?.let { data ->
+                    val html = decodeBase64Safe(data)
+                    if (html.isNotBlank()) {
+                        return html.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
+                    }
+                }
+            }
+        }
+        return ""
+    }
+
+    fun decodeBase64Safe(data: String): String {
+        return try {
+            val sanitized = data.trim().replace('-', '+').replace('_', '/')
+            val decodedBytes = Base64.decode(sanitized, Base64.DEFAULT)
+            String(decodedBytes, StandardCharsets.UTF_8)
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    /**
+     * Sends an email directly via the Gmail API after user authorization and review.
+     */
+    suspend fun sendEmailDirect(
+        recipientTo: String,
+        subject: String,
+        bodyText: String,
+        threadId: String? = null
+    ): Result<GmailSendResponse> = withContext(Dispatchers.IO) {
+        val token = GmailOAuthManager.getValidAccessToken()
+        if (token.isNullOrBlank()) {
+            return@withContext Result.failure(
+                SecurityException("Gmail OAuth 2.0 authorization is required to send emails. Please connect your Google/Gmail account.")
+            )
+        }
+        if (recipientTo.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Recipient email address cannot be blank."))
+        }
+
+        try {
+            // Build RFC 2822 / 5322 compliant message
+            val rawMessage = buildString {
+                append("To: ").append(recipientTo.trim()).append("\r\n")
+                append("Subject: =?utf-8?B?")
+                    .append(Base64.encodeToString(subject.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP))
+                    .append("?=\r\n")
+                append("Content-Type: text/plain; charset=\"UTF-8\"\r\n")
+                append("Content-Transfer-Encoding: base64\r\n\r\n")
+                append(Base64.encodeToString(bodyText.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP))
+            }
+
+            val encodedRaw = Base64.encodeToString(
+                rawMessage.toByteArray(StandardCharsets.UTF_8),
+                Base64.URL_SAFE or Base64.NO_WRAP
+            )
+
+            val request = GmailSendMessageRequest(
+                raw = encodedRaw,
+                threadId = threadId?.takeIf { it.isNotBlank() }
+            )
+
+            val response = service.sendMessage(userId = "me", request = request)
+            Result.success(response)
+        } catch (e: Exception) {
+            Log.e("GmailApiClient", "Failed to send email via Gmail API", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Performs a background sync of latest Gmail threads & messages into the local Room database.
-     * Provides structured feedback and progress updates.
      */
     suspend fun syncThreadsWithRoom(
         repository: AssistantRepository,
-        authToken: String? = null,
         onProgress: (progress: Float, message: String) -> Unit = { _, _ -> }
     ): Result<Int> = withContext(Dispatchers.IO) {
+        val token = GmailOAuthManager.getValidAccessToken()
+        if (token.isNullOrBlank()) {
+            val error = SecurityException("Gmail OAuth 2.0 authorization is required to sync inbox. Please sign in with Google.")
+            onProgress(1.0f, "Authentication Required: Please sign in with Google to sync Gmail.")
+            return@withContext Result.failure(error)
+        }
+
         try {
-            onProgress(0.1f, "Connecting to Gmail API...")
-            
-            // Set token in centralized interceptor
-            val token = authToken?.takeIf { it.length > 20 }
-            authInterceptor.bearerToken = token
+            onProgress(0.15f, "Connecting to Gmail API...")
+            val threadListResponse = service.listThreads(
+                userId = "me",
+                maxResults = 15
+            )
 
-            // If token is provided, attempt live Gmail API fetch; otherwise simulate network sync with local cache validation
-            if (token != null) {
-                onProgress(0.3f, "Fetching recent threads from Gmail...")
-                val threadListResponse = service.listThreads(
-                    userId = "me",
-                    maxResults = 10
-                )
-
-                // Safely handle nullable threads list with proper null coalescing
-                val threadItems = threadListResponse.threads ?: emptyList()
-                var syncedCount = 0
-
-                threadItems.forEachIndexed { index, item ->
-                    val progress = 0.3f + (0.6f * (index + 1) / (threadItems.size.coerceAtLeast(1)))
-                    onProgress(progress, "Syncing thread ${index + 1} of ${threadItems.size}...")
-
-                    try {
-                        val threadDetail = service.getThread(
-                            userId = "me",
-                            threadId = item.id
-                        )
-
-                        val msgs = threadDetail.messages ?: emptyList()
-                        val lastMsg = msgs.lastOrNull()
-
-                        val senderHeader = lastMsg?.payload?.headers?.firstOrNull { it.name.equals("From", ignoreCase = true) }?.value.orEmpty()
-                        val subjectHeader = lastMsg?.payload?.headers?.firstOrNull { it.name.equals("Subject", ignoreCase = true) }?.value ?: "No Subject"
-
-                        val parsedThread = GmailThreadEntity(
-                            threadId = threadDetail.id,
-                            historyId = threadDetail.historyId ?: "",
-                            snippet = item.snippet ?: lastMsg?.snippet ?: "",
-                            subject = subjectHeader,
-                            senderSummary = senderHeader.substringBefore("<").trim().ifEmpty { senderHeader },
-                            lastSenderEmail = senderHeader.substringAfter("<", "").substringBefore(">").trim().ifEmpty { senderHeader },
-                            lastMessageTimestamp = lastMsg?.internalDate?.toLongOrNull() ?: System.currentTimeMillis(),
-                            messageCount = msgs.size,
-                            isUnread = lastMsg?.labelIds?.contains("UNREAD") == true,
-                            isStarred = lastMsg?.labelIds?.contains("STARRED") == true,
-                            folder = if (lastMsg?.labelIds?.contains("SENT") == true) EmailFolder.SENT else EmailFolder.INBOX,
-                            category = EmailCategory.PRIMARY,
-                            priority = if (lastMsg?.labelIds?.contains("IMPORTANT") == true) EmailPriority.HIGH else EmailPriority.NORMAL,
-                            labels = lastMsg?.labelIds?.joinToString(", ") ?: "INBOX",
-                            isSyncedOffline = true
-                        )
-
-                        val messageEntities = msgs.map { m ->
-                            val from = m.payload?.headers?.firstOrNull { it.name.equals("From", ignoreCase = true) }?.value.orEmpty()
-                            val to = m.payload?.headers?.firstOrNull { it.name.equals("To", ignoreCase = true) }?.value.orEmpty()
-                            val sub = m.payload?.headers?.firstOrNull { it.name.equals("Subject", ignoreCase = true) }?.value ?: subjectHeader
-
-                            GmailMessageEntity(
-                                messageId = m.id,
-                                threadId = m.threadId,
-                                senderName = from.substringBefore("<").trim().ifEmpty { from },
-                                senderEmail = from.substringAfter("<", "").substringBefore(">").trim().ifEmpty { from },
-                                recipientEmails = to,
-                                subject = sub,
-                                snippet = m.snippet.orEmpty(),
-                                bodyText = m.snippet.orEmpty(),
-                                internalDate = m.internalDate?.toLongOrNull() ?: System.currentTimeMillis(),
-                                isRead = m.labelIds?.contains("UNREAD") != true,
-                                isStarred = m.labelIds?.contains("STARRED") == true,
-                                isSent = m.labelIds?.contains("SENT") == true,
-                                folder = if (m.labelIds?.contains("SENT") == true) EmailFolder.SENT else EmailFolder.INBOX,
-                                labelIds = m.labelIds?.joinToString(", ") ?: "INBOX",
-                                isCachedLocally = true
-                            )
-                        }
-
-                        repository.saveFetchedGmailThread(parsedThread, messageEntities)
-                        syncedCount++
-                    } catch (_: Exception) {
-                        // Continue syncing next thread gracefully
-                    }
-                }
-
-                onProgress(1.0f, "Synced $syncedCount threads with Room database")
-                Result.success(syncedCount)
-            } else {
-                // Background cache optimization & refresh verification
-                kotlinx.coroutines.delay(600)
-                onProgress(0.5f, "Verifying local Room database cache integrity...")
-                kotlinx.coroutines.delay(500)
-                onProgress(0.85f, "Optimizing indexed email and thread tables...")
-                kotlinx.coroutines.delay(400)
-                onProgress(1.0f, "Local Room database & cache fully synced")
-                Result.success(3)
+            val threadItems = threadListResponse.threads.orEmpty()
+            if (threadItems.isEmpty()) {
+                onProgress(1.0f, "Sync complete • No new threads found")
+                return@withContext Result.success(0)
             }
+
+            var syncedCount = 0
+
+            threadItems.forEachIndexed { index, item ->
+                val progress = 0.2f + (0.75f * (index + 1) / threadItems.size)
+                onProgress(progress, "Syncing thread ${index + 1} of ${threadItems.size}...")
+
+                try {
+                    val threadDetail = service.getThread(
+                        userId = "me",
+                        threadId = item.id
+                    )
+
+                    val msgs = threadDetail.messages.orEmpty()
+                    val lastMsg = msgs.lastOrNull()
+
+                    val senderHeader = lastMsg?.payload?.headers?.firstOrNull { it.name.equals("From", ignoreCase = true) }?.value.orEmpty()
+                    val subjectHeader = lastMsg?.payload?.headers?.firstOrNull { it.name.equals("Subject", ignoreCase = true) }?.value ?: "(No Subject)"
+
+                    val parsedThread = GmailThreadEntity(
+                        threadId = threadDetail.id,
+                        historyId = threadDetail.historyId ?: "",
+                        snippet = item.snippet ?: lastMsg?.snippet ?: "",
+                        subject = subjectHeader,
+                        senderSummary = senderHeader.substringBefore("<").trim().ifEmpty { senderHeader },
+                        lastSenderEmail = senderHeader.substringAfter("<", "").substringBefore(">").trim().ifEmpty { senderHeader },
+                        lastMessageTimestamp = lastMsg?.internalDate?.toLongOrNull() ?: System.currentTimeMillis(),
+                        messageCount = msgs.size,
+                        isUnread = lastMsg?.labelIds?.contains("UNREAD") == true,
+                        isStarred = lastMsg?.labelIds?.contains("STARRED") == true,
+                        folder = if (lastMsg?.labelIds?.contains("SENT") == true) EmailFolder.SENT else EmailFolder.INBOX,
+                        category = EmailCategory.PRIMARY,
+                        priority = if (lastMsg?.labelIds?.contains("IMPORTANT") == true) EmailPriority.HIGH else EmailPriority.NORMAL,
+                        labels = lastMsg?.labelIds?.joinToString(", ") ?: "INBOX",
+                        isSyncedOffline = true
+                    )
+
+                    val messageEntities = msgs.map { m ->
+                        val from = m.payload?.headers?.firstOrNull { it.name.equals("From", ignoreCase = true) }?.value.orEmpty()
+                        val to = m.payload?.headers?.firstOrNull { it.name.equals("To", ignoreCase = true) }?.value.orEmpty()
+                        val sub = m.payload?.headers?.firstOrNull { it.name.equals("Subject", ignoreCase = true) }?.value ?: subjectHeader
+                        val extractedBody = parseMimeBody(m.payload).ifBlank { m.snippet.orEmpty() }
+
+                        GmailMessageEntity(
+                            messageId = m.id,
+                            threadId = m.threadId,
+                            senderName = from.substringBefore("<").trim().ifEmpty { from },
+                            senderEmail = from.substringAfter("<", "").substringBefore(">").trim().ifEmpty { from },
+                            recipientEmails = to,
+                            subject = sub,
+                            snippet = m.snippet.orEmpty(),
+                            bodyText = extractedBody,
+                            internalDate = m.internalDate?.toLongOrNull() ?: System.currentTimeMillis(),
+                            isRead = m.labelIds?.contains("UNREAD") != true,
+                            isStarred = m.labelIds?.contains("STARRED") == true,
+                            isSent = m.labelIds?.contains("SENT") == true,
+                            folder = if (m.labelIds?.contains("SENT") == true) EmailFolder.SENT else EmailFolder.INBOX,
+                            labelIds = m.labelIds?.joinToString(", ") ?: "INBOX",
+                            isCachedLocally = true
+                        )
+                    }
+
+                    repository.saveFetchedGmailThread(parsedThread, messageEntities)
+                    syncedCount++
+                } catch (e: Exception) {
+                    Log.w("GmailApiClient", "Error fetching thread ${item.id}: ${e.message}")
+                }
+            }
+
+            onProgress(1.0f, "Synced $syncedCount threads with Room database")
+            Result.success(syncedCount)
         } catch (e: Exception) {
-            onProgress(1.0f, "Offline Mode: Active Room cache serving requests")
+            Log.e("GmailApiClient", "Gmail sync failure", e)
+            onProgress(1.0f, "Sync Failed: ${e.message}")
             Result.failure(e)
         }
     }

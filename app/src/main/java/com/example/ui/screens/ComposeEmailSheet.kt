@@ -69,7 +69,9 @@ fun ComposeEmailSheet(
     var isGeneratingWithAi by remember { mutableStateOf(false) }
     var suggestedSubjects by remember { mutableStateOf<List<String>>(emptyList()) }
     var showScheduleDialog by remember { mutableStateOf(false) }
+    var showSendConfirmDialog by remember { mutableStateOf(false) }
     var isListeningSpeech by remember { mutableStateOf(false) }
+    val uiState by viewModel.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     // Speech Recognizer Launcher
@@ -190,8 +192,7 @@ fun ComposeEmailSheet(
                         Button(
                             onClick = {
                                 if (to.isNotBlank() && subject.isNotBlank()) {
-                                    viewModel.sendEmail(to, subject, body, isDraft = false)
-                                    onDismiss()
+                                    showSendConfirmDialog = true
                                 }
                             },
                             enabled = to.isNotBlank() && subject.isNotBlank(),
@@ -230,7 +231,7 @@ fun ComposeEmailSheet(
                         color = Text3dSecondary
                     )
                     Text(
-                        text = "Aditya Rai <$userEmail>",
+                        text = "${uiState.userProfile.displayName.ifBlank { "You" }} <${userEmail.ifBlank { uiState.userProfile.email }}>",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         color = Text3dPrimary
@@ -404,7 +405,7 @@ fun ComposeEmailSheet(
                             .clip(RoundedCornerShape(12.dp))
                             .background(Gradient3dPurple)
                             .clickable(enabled = !isGeneratingWithAi) {
-                                val kw = aiContextKeywords.ifBlank { "Executive outreach and partnership opportunity for Aditya Rai" }
+                                val kw = aiContextKeywords.ifBlank { "Executive outreach and partnership opportunity for ${uiState.userProfile.displayName.ifBlank { "our team" }}" }
                                 isGeneratingWithAi = true
                                 viewModel.generateColdEmailFromKeywords(
                                     contextKeywords = kw,
@@ -500,7 +501,8 @@ fun ComposeEmailSheet(
                         onClick = {
                             coroutineScope.launch {
                                 isPolishing = true
-                                val prompt = "Generate 3 high open-rate cold email subject line variants for an email from Aditya Rai about:\n${if (subject.isNotBlank()) subject else body.take(120)}\nFormat output as 3 separate lines with no numbering."
+                                val senderName = uiState.userProfile.displayName.ifBlank { "User" }
+                                val prompt = "Generate 3 high open-rate cold email subject line variants for an email from $senderName about:\n${if (subject.isNotBlank()) subject else body.take(120)}\nFormat output as 3 separate lines with no numbering."
                                 try {
                                     val res = GeminiApiClient.callGemini(prompt)
                                     suggestedSubjects = res.lines().filter { it.isNotBlank() }.take(3)
@@ -601,7 +603,8 @@ fun ComposeEmailSheet(
                                 if (body.isNotBlank()) {
                                     coroutineScope.launch {
                                         isPolishing = true
-                                        val prompt = "Rewrite this email body for Aditya Rai to be ultra-concise, punchy, and under 80 words:\n$body"
+                                        val senderName = uiState.userProfile.displayName.ifBlank { "User" }
+                                        val prompt = "Rewrite this email body for $senderName to be ultra-concise, punchy, and under 80 words:\n$body"
                                         val result = GeminiApiClient.callGemini(prompt)
                                         body = result
                                         isPolishing = false
@@ -617,7 +620,8 @@ fun ComposeEmailSheet(
                                 if (body.isNotBlank()) {
                                     coroutineScope.launch {
                                         isPolishing = true
-                                        val prompt = "Rewrite this email body for Aditya Rai in a confident, high-caliber executive tone for founders/investors:\n$body"
+                                        val senderName = uiState.userProfile.displayName.ifBlank { "User" }
+                                        val prompt = "Rewrite this email body for $senderName in a confident, high-caliber executive tone for founders/investors:\n$body"
                                         val result = GeminiApiClient.callGemini(prompt)
                                         body = result
                                         isPolishing = false
@@ -633,7 +637,8 @@ fun ComposeEmailSheet(
                                 if (body.isNotBlank()) {
                                     coroutineScope.launch {
                                         isPolishing = true
-                                        val prompt = "Elevate this email body for Aditya Rai, adding a compelling value hook and clear call-to-action:\n$body"
+                                        val senderName = uiState.userProfile.displayName.ifBlank { "User" }
+                                        val prompt = "Elevate this email body for $senderName, adding a compelling value hook and clear call-to-action:\n$body"
                                         val result = GeminiApiClient.callGemini(prompt)
                                         body = result
                                         isPolishing = false
@@ -726,7 +731,11 @@ fun ComposeEmailSheet(
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = "Best regards,\nAditya Rai\nkumaradityarai0005@gmail.com",
+                        text = uiState.userProfile.signature.ifBlank {
+                            val name = uiState.userProfile.displayName.ifBlank { "User" }
+                            val email = if (userEmail.isNotBlank()) userEmail else uiState.userProfile.email
+                            "Best regards,\n$name\n$email"
+                        },
                         fontSize = 12.sp,
                         color = Text3dSecondary,
                         lineHeight = 16.sp
@@ -735,6 +744,53 @@ fun ComposeEmailSheet(
             }
 
             Spacer(modifier = Modifier.height(30.dp))
+        }
+
+        // Send Confirmation Dialog
+        if (showSendConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showSendConfirmDialog = false },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Send, contentDescription = null, tint = ElectricBlue)
+                        Text("Confirm Email Dispatch", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Text3dPrimary)
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("Are you sure you want to send this email now?", fontSize = 13.sp, color = Text3dPrimary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("To: $to", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Text3dSecondary)
+                        Text("Subject: $subject", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Text3dSecondary)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showSendConfirmDialog = false
+                            viewModel.sendEmail(to, subject, body, isDraft = false)
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Confirm & Send", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSendConfirmDialog = false }) {
+                        Text("Review", color = Text3dSecondary)
+                    }
+                },
+                containerColor = Color.White,
+                shape = RoundedCornerShape(20.dp)
+            )
         }
 
         // Schedule Send Dialog

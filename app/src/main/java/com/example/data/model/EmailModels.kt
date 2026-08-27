@@ -241,12 +241,12 @@ data class ScheduledEmail(
 )
 
 data class UserProfile(
-    val displayName: String = "Aditya Rai",
-    val email: String = "kumaradityarai0005@gmail.com",
-    val title: String = "Product & AI Engineer",
-    val signature: String = "Best regards,\nAditya Rai\nkumaradityarai0005@gmail.com",
-    val primaryGoal: String = "High-conversion cold outreach & inbox zero automation",
-    val isGoogleConnected: Boolean = true
+    val displayName: String = "",
+    val email: String = "",
+    val title: String = "AI Mail Copilot",
+    val signature: String = "",
+    val primaryGoal: String = "Executive email & outreach automation",
+    val isGoogleConnected: Boolean = false
 )
 
 data class AiChatMessage(

@@ -11,7 +11,6 @@ import com.example.BuildConfig
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,13 +23,12 @@ import java.util.UUID
 data class AuthUserState(
     val isAuthenticated: Boolean = false,
     val uid: String = "",
-    val displayName: String = "Aditya Rai",
-    val email: String = "kumaradityarai0005@gmail.com",
+    val displayName: String = "",
+    val email: String = "",
     val photoUrl: String? = null,
     val isGoogleLinked: Boolean = false,
     val providerId: String = "",
-    val lastSignInTime: Long = System.currentTimeMillis(),
-    val tokenExpiredAt: Long? = null
+    val lastSignInTime: Long = 0L
 )
 
 sealed class AuthResult {
@@ -46,15 +44,13 @@ class FirebaseAuthService(private val context: Context) {
                 val initialized = try {
                     com.google.firebase.FirebaseApp.initializeApp(context) != null
                 } catch (e: Exception) {
-                    Log.w("FirebaseAuthService", "FirebaseApp init error: ${e.message}")
                     false
                 }
                 if (!initialized) {
-                    val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { null }
-                    val projectId = BuildConfig.FIREBASE_PROJECT_ID.ifBlank { null }
-                    val appId = BuildConfig.FIREBASE_APPLICATION_ID.ifBlank { null }
-                    
-                    if (apiKey != null && projectId != null && appId != null) {
+                    val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { "" }
+                    val projectId = BuildConfig.FIREBASE_PROJECT_ID.ifBlank { "" }
+                    val appId = BuildConfig.FIREBASE_APPLICATION_ID.ifBlank { "" }
+                    if (apiKey.isNotBlank() && projectId.isNotBlank() && appId.isNotBlank()) {
                         val options = com.google.firebase.FirebaseOptions.Builder()
                             .setApplicationId(appId)
                             .setProjectId(projectId)
@@ -80,63 +76,87 @@ class FirebaseAuthService(private val context: Context) {
             auth?.addAuthStateListener { firebaseAuth ->
                 val user = firebaseAuth.currentUser
                 if (user != null) {
-                    // BUG FIX S2: Only set authenticated if actual user exists
                     _userState.value = AuthUserState(
                         isAuthenticated = true,
                         uid = user.uid,
-                        displayName = user.displayName ?: "User",
+                        displayName = user.displayName ?: "",
                         email = user.email ?: "",
                         photoUrl = user.photoUrl?.toString(),
-                        isGoogleLinked = user.providerData.any { it.providerId == "google.com" },
-                        providerId = "google.com",
-                        lastSignInTime = System.currentTimeMillis()
+                        isGoogleLinked = user.providerData.any {
+                            it.providerId == GoogleAuthProvider.PROVIDER_ID
+                        },
+                        providerId = user.providerData
+                            .firstOrNull { it.providerId == GoogleAuthProvider.PROVIDER_ID }
+                            ?.providerId ?: (user.providerData.firstOrNull()?.providerId ?: ""),
+                        lastSignInTime = user.metadata?.lastSignInTimestamp
+                            ?: System.currentTimeMillis()
                     )
                 } else {
-                    // BUG FIX A6: Return false authenticated state when no user
-                    _userState.value = AuthUserState(isAuthenticated = false)
+                    _userState.value = AuthUserState(
+                        isAuthenticated = false,
+                        uid = "",
+                        displayName = "",
+                        email = "",
+                        photoUrl = null,
+                        isGoogleLinked = false,
+                        providerId = "",
+                        lastSignInTime = 0L
+                    )
                 }
             }
         } catch (e: Exception) {
-            Log.w("FirebaseAuthService", "AuthStateListener error: ${e.message}")
+            Log.w("FirebaseAuthService", "AuthStateListener notice: ${e.message}")
         }
     }
 
     private fun getCurrentUserState(): AuthUserState {
-        return try {
-            val user = auth?.currentUser
-            if (user != null) {
-                AuthUserState(
-                    isAuthenticated = true,
-                    uid = user.uid,
-                    displayName = user.displayName ?: "User",
-                    email = user.email ?: "",
-                    photoUrl = user.photoUrl?.toString(),
-                    isGoogleLinked = user.providerData.any { it.providerId == "google.com" },
-                    providerId = "google.com"
-                )
-            } else {
-                // BUG FIX S2: Return unauthenticated state
-                AuthUserState(isAuthenticated = false)
-            }
-        } catch (e: Exception) {
-            Log.e("FirebaseAuthService", "Error getting current user state", e)
-            AuthUserState(isAuthenticated = false)
+        val user = auth?.currentUser
+
+        return if (user != null) {
+            AuthUserState(
+                isAuthenticated = true,
+                uid = user.uid,
+                displayName = user.displayName ?: "",
+                email = user.email ?: "",
+                photoUrl = user.photoUrl?.toString(),
+                isGoogleLinked = user.providerData.any {
+                    it.providerId == GoogleAuthProvider.PROVIDER_ID
+                },
+                providerId = user.providerData
+                    .firstOrNull { it.providerId == GoogleAuthProvider.PROVIDER_ID }
+                    ?.providerId ?: (user.providerData.firstOrNull()?.providerId ?: ""),
+                lastSignInTime = user.metadata?.lastSignInTimestamp
+                    ?: System.currentTimeMillis()
+            )
+        } else {
+            AuthUserState(
+                isAuthenticated = false,
+                uid = "",
+                displayName = "",
+                email = "",
+                photoUrl = null,
+                isGoogleLinked = false,
+                providerId = "",
+                lastSignInTime = 0L
+            )
         }
     }
 
     suspend fun signInWithGoogle(webClientId: String? = null): AuthResult {
         return try {
-            // BUG FIX A5: Generate nonce with SecureRandom for cryptographic strength
-            val rawNonce = UUID.randomUUID().toString()
-            val bytes = ByteArray(32)
-            SecureRandom().nextBytes(bytes)
-            val hashedNonce = bytes.fold("") { str, it -> str + "%02x".format(it) }
+            val randomBytes = ByteArray(32)
+            SecureRandom().nextBytes(randomBytes)
+            val rawNonce = UUID.nameUUIDFromBytes(randomBytes).toString()
+            val md = MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(rawNonce.toByteArray())
+            val hashedNonce = digest.fold("") { str, it -> str + "%02x".format(it) }
 
             val effectiveClientId = webClientId?.takeIf { it.isNotBlank() }
                 ?: BuildConfig.GOOGLE_WEB_CLIENT_ID.takeIf { it.isNotBlank() && !it.startsWith("YOUR_") }
-            
-            if (effectiveClientId == null) {
-                return AuthResult.Error("Google Web Client ID not configured. Configure in BuildConfig or pass as parameter.")
+                ?: ""
+
+            if (effectiveClientId.isBlank()) {
+                return AuthResult.Error("Google Web Client ID is not configured. Please provide a valid Client ID.")
             }
 
             val googleIdOption = GetGoogleIdOption.Builder()
@@ -159,23 +179,20 @@ class FirebaseAuthService(private val context: Context) {
                 val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
                 val idToken = googleIdTokenCredential.idToken
                 val authCredential = GoogleAuthProvider.getCredential(idToken, null)
-                val authResult = auth?.signInWithCredential(authCredential)?.await()
+                val firebaseAuthInstance = auth ?: return AuthResult.Error("Firebase Auth service unavailable")
+                val authResult = firebaseAuthInstance.signInWithCredential(authCredential).await()
                 val firebaseUser = authResult?.user
 
                 if (firebaseUser != null) {
-                    // BUG FIX A2: Store token expiration time
-                    val tokenTask = firebaseUser.getIdToken(false).await()
-                    val expirationTime = System.currentTimeMillis() + (60 * 60 * 1000) // 1 hour
-
                     val state = AuthUserState(
                         isAuthenticated = true,
                         uid = firebaseUser.uid,
-                        displayName = firebaseUser.displayName ?: googleIdTokenCredential.displayName ?: "User",
+                        displayName = firebaseUser.displayName ?: googleIdTokenCredential.displayName ?: "",
                         email = firebaseUser.email ?: googleIdTokenCredential.id,
                         photoUrl = firebaseUser.photoUrl?.toString() ?: googleIdTokenCredential.profilePictureUri?.toString(),
                         isGoogleLinked = true,
-                        providerId = "google.com",
-                        tokenExpiredAt = expirationTime
+                        providerId = GoogleAuthProvider.PROVIDER_ID,
+                        lastSignInTime = firebaseUser.metadata?.lastSignInTimestamp ?: System.currentTimeMillis()
                     )
                     _userState.value = state
                     AuthResult.Success(state)
@@ -188,19 +205,11 @@ class FirebaseAuthService(private val context: Context) {
         } catch (e: GetCredentialCancellationException) {
             Log.w("FirebaseAuthService", "User cancelled Google Sign-in")
             AuthResult.Cancelled
-        } catch (e: GetCredentialException) {
-            // BUG FIX A3: Specific exception handling for credential errors
-            Log.e("FirebaseAuthService", "GetCredentialException: ${e.message}", e)
-            when {
-                e.message?.contains("401", ignoreCase = true) == true -> 
-                    AuthResult.Error("Authentication expired. Please sign in again.")
-                e.message?.contains("network", ignoreCase = true) == true ->
-                    AuthResult.Error("Network error. Please check your connection.")
-                else -> AuthResult.Error("Sign-in failed: ${e.message}")
-            }
         } catch (e: Exception) {
-            Log.e("FirebaseAuthService", "Google Sign-in error", e)
-            AuthResult.Error("Sign-in failed: ${e.message ?: "Unknown error"}")
+            Log.e("FirebaseAuthService", "Google sign-in failed", e)
+            AuthResult.Error(
+                e.message ?: "Google sign-in failed"
+            )
         }
     }
 
@@ -208,33 +217,20 @@ class FirebaseAuthService(private val context: Context) {
         try {
             auth?.signOut()
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
+            GmailOAuthManager.clearSession()
         } catch (e: Exception) {
             Log.e("FirebaseAuthService", "Error signing out", e)
         } finally {
-            _userState.value = AuthUserState(isAuthenticated = false)
-        }
-    }
-
-    fun linkDirectGoogleAccount(name: String, email: String) {
-        _userState.value = AuthUserState(
-            isAuthenticated = true,
-            uid = "google_linked_${System.currentTimeMillis()}",
-            displayName = name,
-            email = email,
-            isGoogleLinked = true,
-            providerId = "google.com"
-        )
-    }
-
-    // BUG FIX A2: Check if current token is expired
-    suspend fun ensureTokenFresh(): Boolean {
-        return try {
-            val user = auth?.currentUser ?: return false
-            val tokenResult = user.getIdToken(true).await() // Force refresh
-            return tokenResult != null
-        } catch (e: Exception) {
-            Log.e("FirebaseAuthService", "Token refresh failed", e)
-            false
+            _userState.value = AuthUserState(
+                isAuthenticated = false,
+                uid = "",
+                displayName = "",
+                email = "",
+                photoUrl = null,
+                isGoogleLinked = false,
+                providerId = "",
+                lastSignInTime = 0L
+            )
         }
     }
 }

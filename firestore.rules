@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for authorization
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Explicitly reject root or un-namespaced access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User-specific data isolation
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      // Campaigns subcollection
+      match /campaigns/{campaignId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Automation Rules subcollection
+      match /automation_rules/{ruleId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Social Outreach subcollection
+      match /social_outreach/{outreachId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Scheduled Emails subcollection
+      match /scheduled_emails/{scheduledId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // User Settings subcollection
+      match /settings/{settingId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}
