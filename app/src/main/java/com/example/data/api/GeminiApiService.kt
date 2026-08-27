@@ -367,7 +367,7 @@ object GeminiApiClient {
             isThinking -> {
                 """
                 🧠 [Deep Strategic Thinking & Pitch Synthesis]
-                Analysis: The recipient receives ~50+ vendor pitches weekly. To stand out, the message must bypass typical sales cadence clichés, highlight a concrete quantitative hook (42% resp rate), and position consultative value over transactional gain.
+                Analysis: The recipient receives ~50+ vendor pitches weekly. To stand out, the message must bypass typical sales cadence clichés, highlight a concrete quantitative hook (42% response rate), and position consultative value over transactional gain.
 
                 Sequence Recommendation:
                 1. Subject: Aditya Rai / Outbound velocity at [TargetCompany]
