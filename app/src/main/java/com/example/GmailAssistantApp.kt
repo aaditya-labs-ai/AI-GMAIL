@@ -1,7 +1,7 @@
 package com.example
 
 import android.app.Application
-import android.util.Log
+import com.example.util.SafeLogger
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 
@@ -16,18 +16,24 @@ class GmailAssistantApp : Application() {
                     false
                 }
                 if (!initialized) {
-                    val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { "<REDACTED>" }
-                    val options = FirebaseOptions.Builder()
-                        .setApplicationId("com.aistudio.gmailassistant.kdqpxz")
-                        .setProjectId("ai-studio-gmail-assistant")
-                        .setApiKey(apiKey)
-                        .build()
-                    FirebaseApp.initializeApp(this, options)
-                    Log.d("GmailAssistantApp", "Initialized FirebaseApp with configured options")
+                    val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { "" }
+                    val projectId = BuildConfig.FIREBASE_PROJECT_ID.ifBlank { "" }
+                    val appId = BuildConfig.FIREBASE_APPLICATION_ID.ifBlank { "" }
+                    if (apiKey.isNotBlank() && projectId.isNotBlank() && appId.isNotBlank() && !apiKey.startsWith("YOUR_")) {
+                        val options = FirebaseOptions.Builder()
+                            .setApplicationId(appId)
+                            .setProjectId(projectId)
+                            .setApiKey(apiKey)
+                            .build()
+                        FirebaseApp.initializeApp(this, options)
+                        SafeLogger.d("GmailAssistantApp", "Initialized FirebaseApp with configured environment options")
+                    } else {
+                        SafeLogger.w("GmailAssistantApp", "Firebase configuration is not present or incomplete in environment")
+                    }
                 }
             }
         } catch (e: Exception) {
-            Log.w("GmailAssistantApp", "Firebase init notice: ${e.message}")
+            SafeLogger.w("GmailAssistantApp", "Firebase initialization check: ${e.message}")
         }
     }
 }

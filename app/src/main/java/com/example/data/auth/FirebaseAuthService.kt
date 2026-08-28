@@ -1,16 +1,20 @@
 package com.example.data.auth
 
 import android.content.Context
-import android.util.Log
+import android.util.Base64
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import com.example.BuildConfig
+import com.example.util.SafeLogger
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +22,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.util.UUID
 
 data class AuthUserState(
     val isAuthenticated: Boolean = false,
@@ -40,9 +43,9 @@ sealed class AuthResult {
 class FirebaseAuthService(private val context: Context) {
     private val auth: FirebaseAuth? by lazy {
         try {
-            if (com.google.firebase.FirebaseApp.getApps(context).isEmpty()) {
+            if (FirebaseApp.getApps(context).isEmpty()) {
                 val initialized = try {
-                    com.google.firebase.FirebaseApp.initializeApp(context) != null
+                    FirebaseApp.initializeApp(context) != null
                 } catch (e: Exception) {
                     false
                 }
@@ -50,22 +53,23 @@ class FirebaseAuthService(private val context: Context) {
                     val apiKey = BuildConfig.FIREBASE_API_KEY.ifBlank { "" }
                     val projectId = BuildConfig.FIREBASE_PROJECT_ID.ifBlank { "" }
                     val appId = BuildConfig.FIREBASE_APPLICATION_ID.ifBlank { "" }
-                    if (apiKey.isNotBlank() && projectId.isNotBlank() && appId.isNotBlank()) {
-                        val options = com.google.firebase.FirebaseOptions.Builder()
+                    if (apiKey.isNotBlank() && projectId.isNotBlank() && appId.isNotBlank() && !apiKey.startsWith("YOUR_")) {
+                        val options = FirebaseOptions.Builder()
                             .setApplicationId(appId)
                             .setProjectId(projectId)
                             .setApiKey(apiKey)
                             .build()
-                        com.google.firebase.FirebaseApp.initializeApp(context, options)
+                        FirebaseApp.initializeApp(context, options)
                     }
                 }
             }
             FirebaseAuth.getInstance()
         } catch (e: Exception) {
-            Log.w("FirebaseAuthService", "FirebaseAuth lazy init: ${e.message}")
+            SafeLogger.w("FirebaseAuthService", "FirebaseAuth lazy init notice: ${e.message}")
             null
         }
     }
+
     private val credentialManager: CredentialManager by lazy { CredentialManager.create(context) }
 
     private val _userState = MutableStateFlow(getCurrentUserState())
@@ -105,8 +109,24 @@ class FirebaseAuthService(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            Log.w("FirebaseAuthService", "AuthStateListener notice: ${e.message}")
+            SafeLogger.w("FirebaseAuthService", "AuthStateListener notice: ${e.message}")
         }
+    }
+
+    fun getCurrentUser(): FirebaseUser? {
+        return auth?.currentUser
+    }
+
+    fun isAuthenticated(): Boolean {
+        return auth?.currentUser != null
+    }
+
+    fun requireAuthenticatedUser(): FirebaseUser {
+        return auth?.currentUser ?: throw SecurityException("Authentication required. Please sign in to proceed.")
+    }
+
+    fun getCurrentUid(): String {
+        return auth?.currentUser?.uid ?: ""
     }
 
     private fun getCurrentUserState(): AuthUserState {
@@ -144,12 +164,13 @@ class FirebaseAuthService(private val context: Context) {
 
     suspend fun signInWithGoogle(webClientId: String? = null): AuthResult {
         return try {
-            val randomBytes = ByteArray(32)
-            SecureRandom().nextBytes(randomBytes)
-            val rawNonce = UUID.nameUUIDFromBytes(randomBytes).toString()
-            val md = MessageDigest.getInstance("SHA-256")
-            val digest = md.digest(rawNonce.toByteArray())
-            val hashedNonce = digest.fold("") { str, it -> str + "%02x".format(it) }
+            // Cryptographically secure nonce generation
+            val secureRandom = SecureRandom()
+            val nonceBytes = ByteArray(32)
+            secureRandom.nextBytes(nonceBytes)
+            val rawNonce = Base64.encodeToString(nonceBytes, Base64.NO_WRAP or Base64.URL_SAFE)
+            val digest = MessageDigest.getInstance("SHA-256").digest(rawNonce.toByteArray(Charsets.UTF_8))
+            val hashedNonce = digest.joinToString("") { "%02x".format(it) }
 
             val effectiveClientId = webClientId?.takeIf { it.isNotBlank() }
                 ?: BuildConfig.GOOGLE_WEB_CLIENT_ID.takeIf { it.isNotBlank() && !it.startsWith("YOUR_") }
@@ -195,6 +216,7 @@ class FirebaseAuthService(private val context: Context) {
                         lastSignInTime = firebaseUser.metadata?.lastSignInTimestamp ?: System.currentTimeMillis()
                     )
                     _userState.value = state
+                    SafeLogger.d("FirebaseAuthService", "User authenticated successfully")
                     AuthResult.Success(state)
                 } else {
                     AuthResult.Error("Firebase user null after Google credential sign-in")
@@ -203,10 +225,10 @@ class FirebaseAuthService(private val context: Context) {
                 AuthResult.Error("Unsupported credential received: ${credential.type}")
             }
         } catch (e: GetCredentialCancellationException) {
-            Log.w("FirebaseAuthService", "User cancelled Google Sign-in")
+            SafeLogger.w("FirebaseAuthService", "User cancelled Google Sign-in")
             AuthResult.Cancelled
         } catch (e: Exception) {
-            Log.e("FirebaseAuthService", "Google sign-in failed", e)
+            SafeLogger.e("FirebaseAuthService", "Google sign-in error: ${e.message}")
             AuthResult.Error(
                 e.message ?: "Google sign-in failed"
             )
@@ -218,8 +240,9 @@ class FirebaseAuthService(private val context: Context) {
             auth?.signOut()
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
             GmailOAuthManager.clearSession()
+            SafeLogger.d("FirebaseAuthService", "User signed out successfully")
         } catch (e: Exception) {
-            Log.e("FirebaseAuthService", "Error signing out", e)
+            SafeLogger.e("FirebaseAuthService", "Error signing out: ${e.message}")
         } finally {
             _userState.value = AuthUserState(
                 isAuthenticated = false,

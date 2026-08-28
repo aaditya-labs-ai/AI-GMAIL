@@ -51,6 +51,9 @@ interface EmailDao {
     @Query("DELETE FROM emails WHERE id = :id")
     suspend fun deleteEmailById(id: Long)
 
+    @Query("DELETE FROM emails")
+    suspend fun clearAllEmails()
+
     @Query("SELECT COUNT(*) FROM emails WHERE folder = 'INBOX' AND isRead = 0")
     fun getUnreadCount(): Flow<Int>
 }
@@ -283,6 +286,9 @@ interface DraftMessageDao {
 
     @Query("DELETE FROM draft_messages WHERE threadId = :threadId")
     suspend fun deleteDraftsForThread(threadId: String)
+
+    @Query("DELETE FROM draft_messages")
+    suspend fun clearAllDrafts()
 
     @Query("SELECT COUNT(*) FROM draft_messages WHERE syncStatus = 'LOCAL_DRAFT'")
     fun getDraftCount(): Flow<Int>

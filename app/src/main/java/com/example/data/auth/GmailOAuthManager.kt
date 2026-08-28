@@ -1,25 +1,31 @@
 package com.example.data.auth
 
-import android.util.Log
+import com.example.util.SafeLogger
 
 /**
- * Manages Gmail OAuth 2.0 access tokens separately from Firebase Authentication.
- * Ensures access tokens are scoped, checked for expiration, and never logged or exposed.
+ * In-memory manager for Gmail OAuth 2.0 access tokens.
+ * Implements [GmailTokenProvider] to supply valid, unexpired Bearer tokens.
+ * Access tokens are stored strictly in-memory and are never logged, persisted in plaintext, or exposed.
  */
-object GmailOAuthManager {
+object GmailOAuthManager : GmailTokenProvider {
+
     data class GmailSession(
         val accessToken: String,
         val expirationTimestamp: Long,
-        val grantedScopes: Set<String> = setOf("https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.send")
+        val grantedScopes: Set<String> = setOf(GmailScopes.READ_ONLY, GmailScopes.SEND)
     ) {
         val isExpired: Boolean
-            get() = System.currentTimeMillis() >= (expirationTimestamp - 60_000L) // 1-minute safety window
+            get() = System.currentTimeMillis() >= (expirationTimestamp - 60_000L) // 1-minute safety margin
     }
 
     @Volatile
     private var currentSession: GmailSession? = null
 
-    fun setSession(accessToken: String, expiresInSeconds: Long = 3600L, scopes: Set<String> = emptySet()) {
+    fun setSession(
+        accessToken: String,
+        expiresInSeconds: Long = 3600L,
+        scopes: Set<String> = emptySet()
+    ) {
         if (accessToken.isBlank()) {
             currentSession = null
             return
@@ -28,24 +34,32 @@ object GmailOAuthManager {
         currentSession = GmailSession(
             accessToken = accessToken.trim(),
             expirationTimestamp = expiry,
-            grantedScopes = if (scopes.isNotEmpty()) scopes else setOf("https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.send")
+            grantedScopes = if (scopes.isNotEmpty()) scopes else setOf(GmailScopes.READ_ONLY, GmailScopes.SEND)
         )
-        Log.d("GmailOAuthManager", "Gmail OAuth session established with expiration at $expiry")
+        SafeLogger.d("GmailOAuthManager", "Gmail OAuth session established safely (duration: ${expiresInSeconds}s)")
     }
 
-    fun getValidAccessToken(): String? {
+    override suspend fun getAccessToken(): String? {
+        return getValidAccessToken()
+    }
+
+    override fun getValidAccessToken(): String? {
         val session = currentSession ?: return null
         return if (!session.isExpired && session.accessToken.isNotBlank()) {
             session.accessToken
         } else {
+            if (session.isExpired) {
+                SafeLogger.d("GmailOAuthManager", "Gmail session has expired; invalidating")
+                currentSession = null
+            }
             null
         }
     }
 
-    fun hasValidAuthorization(): Boolean = getValidAccessToken() != null
+    override fun hasValidAuthorization(): Boolean = getValidAccessToken() != null
 
-    fun clearSession() {
+    override fun clearSession() {
         currentSession = null
-        Log.d("GmailOAuthManager", "Gmail OAuth session cleared")
+        SafeLogger.d("GmailOAuthManager", "Gmail OAuth session invalidated")
     }
 }

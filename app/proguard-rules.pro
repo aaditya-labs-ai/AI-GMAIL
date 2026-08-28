@@ -1,21 +1,36 @@
 # Add project specific ProGuard rules here.
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Preserve annotations and line numbers for stack traces
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,SourceFile,LineNumberTable
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Moshi rules
+-keepclasseswithmembers class * {
+    @com.squareup.moshi.Json <fields>;
+}
+-keep class com.squareup.moshi.** { *; }
+-keep interface com.squareup.moshi.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Retrofit & OkHttp
+-keepattributes Signature
+-keepattributes Exceptions
+-dontwarn javax.annotation.**
+-keep class retrofit2.** { *; }
+-keepclasseswithmembers interface * {
+    @retrofit2.http.* <methods>;
+}
+
+# Room Database
+-keep class * extends androidx.room.RoomDatabase
+-dontwarn androidx.room.paging.**
+
+# Data Models
+-keep class com.example.data.model.** { *; }
+-keep class com.example.data.api.** { *; }
+-keep class com.example.data.auth.** { *; }
+
+# Firebase & Credential Manager
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.libraries.identity.googleid.** { *; }
+-keep class androidx.credentials.** { *; }

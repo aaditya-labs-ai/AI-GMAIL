@@ -1,53 +1,60 @@
 package com.example.data.firestore
 
-import android.util.Log
 import com.example.data.model.AutomationRule
 import com.example.data.model.ColdMailCampaign
 import com.example.data.model.NotificationPreferences
 import com.example.data.model.ScheduledEmail
 import com.example.data.model.SocialOutreachItem
+import com.example.util.SafeLogger
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.tasks.await
+
+sealed interface CloudWriteResult {
+    data object Success : CloudWriteResult
+    data class Failure(val message: String) : CloudWriteResult
+}
 
 class FirestoreService {
     private val firestore: FirebaseFirestore? by lazy {
         try {
             FirebaseFirestore.getInstance()
         } catch (e: Exception) {
-            Log.w("FirestoreService", "Firestore instance unavailable: ${e.message}")
+            SafeLogger.w("FirestoreService", "Firestore instance unavailable: ${e.message}")
             null
         }
     }
 
-    private fun getVerifiedCurrentUid(): String? {
-        val auth = try {
-            FirebaseAuth.getInstance()
+    private fun getAuthenticatedUid(): String? {
+        return try {
+            FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }
         } catch (e: Exception) {
             null
         }
-        return auth?.currentUser?.uid?.takeIf { it.isNotBlank() }
     }
 
-    private fun validateAccess(requestedUserId: String): String {
-        val currentUid = getVerifiedCurrentUid()
-            ?: throw SecurityException("Unauthorized Firestore access: User is not authenticated.")
-        if (requestedUserId.isBlank() || requestedUserId != currentUid) {
-            throw SecurityException("Access Denied: Cannot access data for user '$requestedUserId' from authenticated session '$currentUid'.")
+    private fun resolveVerifiedUid(explicitUserId: String? = null): String {
+        val authUid = getAuthenticatedUid()
+            ?: throw SecurityException("Unauthorized: Operation requires an authenticated Firebase session.")
+
+        if (!explicitUserId.isNullOrBlank() && explicitUserId != authUid) {
+            throw SecurityException("Security Violation: User identifier mismatch detected.")
         }
-        return currentUid
+        return authUid
     }
 
-    suspend fun saveCampaignToCloud(userId: String, campaign: ColdMailCampaign) {
+    suspend fun saveCampaignToCloud(userId: String? = null, campaign: ColdMailCampaign): CloudWriteResult {
         val verifiedUid = try {
-            validateAccess(userId)
+            resolveVerifiedUid(userId)
         } catch (e: SecurityException) {
-            Log.e("FirestoreService", "Security violation: ${e.message}")
-            return
+            SafeLogger.e("FirestoreService", "Access denied for campaign save: ${e.message}")
+            return CloudWriteResult.Failure(e.message ?: "Authentication required")
         }
-        val db = firestore ?: return
-        try {
+
+        val db = firestore ?: return CloudWriteResult.Failure("Cloud database unavailable")
+
+        return try {
             val docRef = db.collection("users")
                 .document(verifiedUid)
                 .collection("campaigns")
@@ -72,21 +79,25 @@ class FirestoreService {
                 "updatedAt" to System.currentTimeMillis()
             )
             docRef.set(data, SetOptions.merge()).await()
-            Log.d("FirestoreService", "Campaign synced to Firestore securely for user $verifiedUid")
+            SafeLogger.d("FirestoreService", "Campaign synced to Firestore securely")
+            CloudWriteResult.Success
         } catch (e: Exception) {
-            Log.e("FirestoreService", "Failed to sync campaign: ${e.message}")
+            SafeLogger.e("FirestoreService", "Failed to sync campaign: ${e.message}")
+            CloudWriteResult.Failure(e.localizedMessage ?: "Failed to sync campaign to cloud")
         }
     }
 
-    suspend fun saveRuleToCloud(userId: String, rule: AutomationRule) {
+    suspend fun saveRuleToCloud(userId: String? = null, rule: AutomationRule): CloudWriteResult {
         val verifiedUid = try {
-            validateAccess(userId)
+            resolveVerifiedUid(userId)
         } catch (e: SecurityException) {
-            Log.e("FirestoreService", "Security violation: ${e.message}")
-            return
+            SafeLogger.e("FirestoreService", "Access denied for rule save: ${e.message}")
+            return CloudWriteResult.Failure(e.message ?: "Authentication required")
         }
-        val db = firestore ?: return
-        try {
+
+        val db = firestore ?: return CloudWriteResult.Failure("Cloud database unavailable")
+
+        return try {
             val docRef = db.collection("users")
                 .document(verifiedUid)
                 .collection("automation_rules")
@@ -106,20 +117,25 @@ class FirestoreService {
                 "updatedAt" to System.currentTimeMillis()
             )
             docRef.set(data, SetOptions.merge()).await()
+            SafeLogger.d("FirestoreService", "Automation rule synced to Firestore securely")
+            CloudWriteResult.Success
         } catch (e: Exception) {
-            Log.e("FirestoreService", "Failed to sync rule: ${e.message}")
+            SafeLogger.e("FirestoreService", "Failed to sync rule: ${e.message}")
+            CloudWriteResult.Failure(e.localizedMessage ?: "Failed to sync rule to cloud")
         }
     }
 
-    suspend fun saveSocialPostToCloud(userId: String, post: SocialOutreachItem) {
+    suspend fun saveSocialPostToCloud(userId: String? = null, post: SocialOutreachItem): CloudWriteResult {
         val verifiedUid = try {
-            validateAccess(userId)
+            resolveVerifiedUid(userId)
         } catch (e: SecurityException) {
-            Log.e("FirestoreService", "Security violation: ${e.message}")
-            return
+            SafeLogger.e("FirestoreService", "Access denied for social post save: ${e.message}")
+            return CloudWriteResult.Failure(e.message ?: "Authentication required")
         }
-        val db = firestore ?: return
-        try {
+
+        val db = firestore ?: return CloudWriteResult.Failure("Cloud database unavailable")
+
+        return try {
             val docRef = db.collection("users")
                 .document(verifiedUid)
                 .collection("social_outreach")
@@ -135,20 +151,25 @@ class FirestoreService {
                 "isSent" to post.isSent
             )
             docRef.set(data, SetOptions.merge()).await()
+            SafeLogger.d("FirestoreService", "Social post synced to Firestore securely")
+            CloudWriteResult.Success
         } catch (e: Exception) {
-            Log.e("FirestoreService", "Failed to sync social post: ${e.message}")
+            SafeLogger.e("FirestoreService", "Failed to sync social post: ${e.message}")
+            CloudWriteResult.Failure(e.localizedMessage ?: "Failed to sync social post to cloud")
         }
     }
 
-    suspend fun saveScheduledEmailToCloud(userId: String, email: ScheduledEmail) {
+    suspend fun saveScheduledEmailToCloud(userId: String? = null, email: ScheduledEmail): CloudWriteResult {
         val verifiedUid = try {
-            validateAccess(userId)
+            resolveVerifiedUid(userId)
         } catch (e: SecurityException) {
-            Log.e("FirestoreService", "Security violation: ${e.message}")
-            return
+            SafeLogger.e("FirestoreService", "Access denied for scheduled email save: ${e.message}")
+            return CloudWriteResult.Failure(e.message ?: "Authentication required")
         }
-        val db = firestore ?: return
-        try {
+
+        val db = firestore ?: return CloudWriteResult.Failure("Cloud database unavailable")
+
+        return try {
             val docRef = db.collection("users")
                 .document(verifiedUid)
                 .collection("scheduled_emails")
@@ -167,20 +188,25 @@ class FirestoreService {
                 "updatedAt" to System.currentTimeMillis()
             )
             docRef.set(data, SetOptions.merge()).await()
+            SafeLogger.d("FirestoreService", "Scheduled email synced to Firestore securely")
+            CloudWriteResult.Success
         } catch (e: Exception) {
-            Log.e("FirestoreService", "Failed to sync scheduled email: ${e.message}")
+            SafeLogger.e("FirestoreService", "Failed to sync scheduled email: ${e.message}")
+            CloudWriteResult.Failure(e.localizedMessage ?: "Failed to sync scheduled email to cloud")
         }
     }
 
-    suspend fun saveNotificationPreferencesToCloud(userId: String, prefs: NotificationPreferences) {
+    suspend fun saveNotificationPreferencesToCloud(userId: String? = null, prefs: NotificationPreferences): CloudWriteResult {
         val verifiedUid = try {
-            validateAccess(userId)
+            resolveVerifiedUid(userId)
         } catch (e: SecurityException) {
-            Log.e("FirestoreService", "Security violation: ${e.message}")
-            return
+            SafeLogger.e("FirestoreService", "Access denied for notification prefs save: ${e.message}")
+            return CloudWriteResult.Failure(e.message ?: "Authentication required")
         }
-        val db = firestore ?: return
-        try {
+
+        val db = firestore ?: return CloudWriteResult.Failure("Cloud database unavailable")
+
+        return try {
             val docRef = db.collection("users")
                 .document(verifiedUid)
                 .collection("settings")
@@ -199,8 +225,11 @@ class FirestoreService {
                 "updatedAt" to System.currentTimeMillis()
             )
             docRef.set(data, SetOptions.merge()).await()
+            SafeLogger.d("FirestoreService", "Notification preferences synced to Firestore securely")
+            CloudWriteResult.Success
         } catch (e: Exception) {
-            Log.e("FirestoreService", "Failed to sync notification preferences: ${e.message}")
+            SafeLogger.e("FirestoreService", "Failed to sync notification preferences: ${e.message}")
+            CloudWriteResult.Failure(e.localizedMessage ?: "Failed to sync notification preferences to cloud")
         }
     }
 }

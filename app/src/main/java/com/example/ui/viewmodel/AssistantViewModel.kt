@@ -11,6 +11,7 @@ import com.example.data.auth.GmailOAuthManager
 import com.example.data.local.AppDatabase
 import com.example.data.model.*
 import com.example.data.repository.AssistantRepository
+import com.example.util.SafeLogger
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -94,7 +95,7 @@ data class AssistantUiState(
 class AssistantViewModel(application: Application) : AndroidViewModel(application) {
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         if (throwable !is kotlinx.coroutines.CancellationException) {
-            android.util.Log.e("AssistantViewModel", "Coroutine error: ${throwable.message}")
+            SafeLogger.e("AssistantViewModel", "Coroutine error: ${throwable.message}")
             _uiState.update { it.copy(aiStatusMessage = "Operation notice: ${throwable.localizedMessage ?: throwable.message}") }
         }
     }
@@ -821,10 +822,11 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     fun signOutUser() {
         viewModelScope.launch {
             authService.signOut()
+            repository.clearUserDataOnSignOut()
             _uiState.update {
                 it.copy(
                     showAccountDialog = false,
-                    aiStatusMessage = "Signed out."
+                    aiStatusMessage = "Signed out. Local session cache cleared."
                 )
             }
         }

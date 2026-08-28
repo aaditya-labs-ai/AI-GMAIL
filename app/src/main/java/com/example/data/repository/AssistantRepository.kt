@@ -7,6 +7,7 @@ import com.example.data.api.GmailSendResponse
 import com.example.data.firestore.FirestoreService
 import com.example.data.local.*
 import com.example.data.model.*
+import com.example.util.SafeLogger
 import kotlinx.coroutines.flow.Flow
 
 class AssistantRepository(
@@ -17,8 +18,21 @@ class AssistantRepository(
     private val gmailThreadDao: GmailThreadDao? = null,
     private val gmailMessageDao: GmailMessageDao? = null,
     private val draftMessageDao: DraftMessageDao? = null,
-    private val firestoreService: FirestoreService = FirestoreService()
+    private val firestoreService: FirestoreService = FirestoreService(),
+    private val aiRepository: AiRepository = AiRepository()
 ) {
+    // Clear user cached data on sign out for strict user privacy
+    suspend fun clearUserDataOnSignOut() {
+        try {
+            gmailThreadDao?.clearAllThreads()
+            gmailMessageDao?.clearAllMessages()
+            draftMessageDao?.clearAllDrafts()
+            emailDao.clearAllEmails()
+            SafeLogger.d("AssistantRepository", "Local cached user mail and drafts purged on sign out")
+        } catch (e: Exception) {
+            SafeLogger.e("AssistantRepository", "Error clearing user cache on sign out: ${e.message}")
+        }
+    }
     // Local Offline Drafts Cache
     fun getAllOfflineDrafts(): Flow<List<DraftMessageEntity>> =
         draftMessageDao?.getAllDrafts() ?: kotlinx.coroutines.flow.flowOf(emptyList())
@@ -358,7 +372,7 @@ class AssistantRepository(
             }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            android.util.Log.e("AssistantRepository", "analyzeEmailForSmartReplies error: ${e.message}")
+            SafeLogger.e("AssistantRepository", "analyzeEmailForSmartReplies error: ${e.message}")
         }
 
         // Context-aware fallback drafts

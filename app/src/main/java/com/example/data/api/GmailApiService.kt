@@ -1,14 +1,16 @@
 package com.example.data.api
 
 import android.util.Base64
-import android.util.Log
+import com.example.BuildConfig
 import com.example.data.auth.GmailOAuthManager
+import com.example.data.auth.GmailTokenProvider
 import com.example.data.model.EmailCategory
 import com.example.data.model.EmailFolder
 import com.example.data.model.EmailPriority
 import com.example.data.model.GmailMessageEntity
 import com.example.data.model.GmailThreadEntity
 import com.example.data.repository.AssistantRepository
+import com.example.util.SafeLogger
 import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -21,6 +23,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.*
+import java.net.HttpURLConnection
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
@@ -142,19 +145,30 @@ interface GmailApiService {
 }
 
 /**
- * Centralized OkHttp Interceptor for injecting Gmail OAuth 2.0 Bearer tokens.
- * Intercepts outbound requests and injects current verified OAuth session.
+ * Secure OkHttp Interceptor for injecting Gmail OAuth 2.0 Bearer tokens.
+ * Redacts tokens, detects HTTP 401 Unauthorized responses, and clears invalid sessions safely.
  */
-class GmailOAuthInterceptor : Interceptor {
+class GmailAuthInterceptor(
+    private val tokenProvider: GmailTokenProvider = GmailOAuthManager
+) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        val token = GmailOAuthManager.getValidAccessToken()
+        val token = tokenProvider.getValidAccessToken()
+
         val requestBuilder = original.newBuilder()
         if (!token.isNullOrBlank()) {
             val formatted = if (token.startsWith("Bearer ", ignoreCase = true)) token else "Bearer $token"
             requestBuilder.header("Authorization", formatted)
         }
-        return chain.proceed(requestBuilder.build())
+
+        val response = chain.proceed(requestBuilder.build())
+
+        if (response.code == HttpURLConnection.HTTP_UNAUTHORIZED) {
+            SafeLogger.w("GmailAuthInterceptor", "Received 401 Unauthorized from Gmail API; invalidating session")
+            tokenProvider.clearSession()
+        }
+
+        return response
     }
 }
 
@@ -163,7 +177,7 @@ class GmailOAuthInterceptor : Interceptor {
 object GmailApiClient {
     private const val BASE_URL = "https://gmail.googleapis.com/"
 
-    private val authInterceptor = GmailOAuthInterceptor()
+    private val authInterceptor = GmailAuthInterceptor()
 
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
@@ -171,8 +185,7 @@ object GmailApiClient {
 
     private val logging = HttpLoggingInterceptor().apply {
         redactHeader("Authorization")
-        redactHeader("x-goog-api-key")
-        level = if (com.example.BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
+        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
     }
 
     private val okHttpClient = OkHttpClient.Builder()
@@ -192,61 +205,12 @@ object GmailApiClient {
             .create(GmailApiService::class.java)
     }
 
-    /**
-     * Recursively extracts and decodes plain-text or HTML message content from nested MIME parts.
-     */
     fun parseMimeBody(payload: GmailMessagePayload?): String {
-        if (payload == null) return ""
-
-        // 1. Direct body data
-        payload.body?.data?.let { encodedData ->
-            val decoded = decodeBase64Safe(encodedData)
-            if (decoded.isNotBlank()) return decoded
-        }
-
-        // 2. Search parts recursively
-        val parts = payload.parts.orEmpty()
-        return extractBodyFromParts(parts)
-    }
-
-    private fun extractBodyFromParts(parts: List<GmailMessagePart>): String {
-        // First look for text/plain
-        for (part in parts) {
-            if (part.mimeType.equals("text/plain", ignoreCase = true)) {
-                part.body?.data?.let { data ->
-                    val text = decodeBase64Safe(data)
-                    if (text.isNotBlank()) return text
-                }
-            }
-            // Recurse child parts
-            if (!part.parts.isNullOrEmpty()) {
-                val nestedText = extractBodyFromParts(part.parts)
-                if (nestedText.isNotBlank()) return nestedText
-            }
-        }
-
-        // Fallback to text/html with tag cleanup
-        for (part in parts) {
-            if (part.mimeType.equals("text/html", ignoreCase = true)) {
-                part.body?.data?.let { data ->
-                    val html = decodeBase64Safe(data)
-                    if (html.isNotBlank()) {
-                        return html.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
-                    }
-                }
-            }
-        }
-        return ""
+        return GmailBodyParser.parseMimeBody(payload)
     }
 
     fun decodeBase64Safe(data: String): String {
-        return try {
-            val sanitized = data.trim().replace('-', '+').replace('_', '/')
-            val decodedBytes = Base64.decode(sanitized, Base64.DEFAULT)
-            String(decodedBytes, StandardCharsets.UTF_8)
-        } catch (_: Exception) {
-            ""
-        }
+        return GmailBodyParser.decodeBase64Safe(data)
     }
 
     /**
@@ -293,7 +257,7 @@ object GmailApiClient {
             val response = service.sendMessage(userId = "me", request = request)
             Result.success(response)
         } catch (e: Exception) {
-            Log.e("GmailApiClient", "Failed to send email via Gmail API", e)
+            SafeLogger.e("GmailApiClient", "Failed to send email via Gmail API: ${e.message}")
             Result.failure(e)
         }
     }
@@ -389,14 +353,14 @@ object GmailApiClient {
                     repository.saveFetchedGmailThread(parsedThread, messageEntities)
                     syncedCount++
                 } catch (e: Exception) {
-                    Log.w("GmailApiClient", "Error fetching thread ${item.id}: ${e.message}")
+                    SafeLogger.w("GmailApiClient", "Error fetching thread ${item.id}: ${e.message}")
                 }
             }
 
             onProgress(1.0f, "Synced $syncedCount threads with Room database")
             Result.success(syncedCount)
         } catch (e: Exception) {
-            Log.e("GmailApiClient", "Gmail sync failure", e)
+            SafeLogger.e("GmailApiClient", "Gmail sync failure: ${e.message}")
             onProgress(1.0f, "Sync Failed: ${e.message}")
             Result.failure(e)
         }
