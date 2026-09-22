@@ -5,7 +5,13 @@ import com.example.data.auth.GmailScopes
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+// Robolectric is required: GmailOAuthManager logs through SafeLogger (android.util.Log).
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
 class GmailTokenProviderTest {
 
     @Before
