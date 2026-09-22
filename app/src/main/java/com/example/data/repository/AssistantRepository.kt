@@ -21,15 +21,22 @@ class AssistantRepository(
     private val firestoreService: FirestoreService = FirestoreService(),
     private val aiRepository: AiRepository = AiRepository()
 ) {
-    // Clear user cached data on sign out for strict user privacy
+    // Clear user cached data on sign out for strict user privacy.
+    // Clears ALL user-generated local tables so no data from one account can be
+    // observed after signing out or when another account signs in on the same device.
     suspend fun clearUserDataOnSignOut() {
         try {
             gmailThreadDao?.clearAllThreads()
             gmailMessageDao?.clearAllMessages()
             draftMessageDao?.clearAllDrafts()
             emailDao.clearAllEmails()
-            SafeLogger.d("AssistantRepository", "Local cached user mail and drafts purged on sign out")
+            coldMailDao.clearAllCampaigns()
+            automationDao.clearAllRules()
+            automationDao.clearAllLogs()
+            socialDao.clearAllOutreach()
+            SafeLogger.d("AssistantRepository", "Local cached user data purged on sign out")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             SafeLogger.e("AssistantRepository", "Error clearing user cache on sign out: ${e.message}")
         }
     }
@@ -279,9 +286,10 @@ class AssistantRepository(
     }
 
     /**
-     * Image generation via Imagen with user selectable size (1K, 2K, 4K)
+     * Image generation via Imagen with user selectable size (1K, 2K, 4K).
+     * Returns null when generation fails — callers must not treat null as success.
      */
-    suspend fun generateCampaignImage(prompt: String, imageSize: String): String {
+    suspend fun generateCampaignImage(prompt: String, imageSize: String): String? {
         return GeminiApiClient.generateImage(prompt, imageSize = imageSize)
     }
 
