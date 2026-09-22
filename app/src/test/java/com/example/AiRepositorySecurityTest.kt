@@ -10,11 +10,19 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Security and regression coverage for the AI request path:
  * authentication, request validation, and response handling.
+ *
+ * Runs with Robolectric because the repository logs through SafeLogger,
+ * which calls android.util.Log (not available on a plain JVM).
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
 class AiRepositorySecurityTest {
 
     /**
