@@ -5,7 +5,7 @@ import com.example.util.SafeLogger
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.appcheck.FirebaseAppCheck
-import com.google.firebase.appcheck.recaptcha.ReCaptchaAppCheckProviderFactory
+import com.google.firebase.appcheck.recaptcha.RecaptchaAppCheckProviderFactory
 
 class GmailAssistantApp : Application() {
     override fun onCreate() {
@@ -60,7 +60,7 @@ class GmailAssistantApp : Application() {
             if (FirebaseApp.getApps(this).isNotEmpty()) {
                 FirebaseAppCheck.getInstance()
                     .installAppCheckProviderFactory(
-                        ReCaptchaAppCheckProviderFactory.getInstance()
+                        RecaptchaAppCheckProviderFactory.getInstance()
                     )
                 SafeLogger.d("GmailAssistantApp", "Firebase App Check provider installed")
             }
