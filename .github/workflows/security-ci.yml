@@ -33,9 +33,9 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
         with:
-          # NOTE: this project has no committed Gradle wrapper.
-          # Adjust this version if the project pins a different Gradle release.
-          gradle-version: 9.2.0
+          # AGP 9.1.1 requires Gradle >= 9.3.1 (it hard-fails on older versions).
+          # This project has no committed Gradle wrapper, so the version is pinned here.
+          gradle-version: 9.3.1
       - name: Run unit tests
         run: gradle test --no-daemon --stacktrace
 
@@ -47,10 +47,20 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: java-kotlin
-      - uses: github/codeql-action/autobuild@v3
-      - uses: github/codeql-action/analyze@v3
+      # AGP 9.1.1 requires Gradle >= 9.3.1; autobuild cannot know that, so we
+      # compile the debug variant explicitly for CodeQL extraction.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.3.1
+      - name: Build for CodeQL extraction
+        run: gradle compileDebugSources --no-daemon --stacktrace
+      - uses: github/codeql-action/analyze@v4
         with:
           category: "/language:java-kotlin"
