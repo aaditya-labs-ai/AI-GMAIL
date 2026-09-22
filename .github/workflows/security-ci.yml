@@ -1,0 +1,56 @@
+name: Security CI
+
+on:
+  push:
+    branches: [main, security-hardening]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Secret scanning over the full diff/history reachable from the push
+  secret-scan:
+    name: Secret scanning (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  unit-tests:
+    name: Unit tests (security & regression)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          # NOTE: this project has no committed Gradle wrapper.
+          # Adjust this version if the project pins a different Gradle release.
+          gradle-version: 9.2.0
+      - name: Run unit tests
+        run: gradle test --no-daemon --stacktrace
+
+  codeql:
+    name: CodeQL analysis (Java/Kotlin)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"
