@@ -156,7 +156,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     init {
         // Sync auth state to userProfile in UI state reactively
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             authUserState.collect { authUser ->
                 _uiState.update { state ->
                     state.copy(
@@ -246,19 +246,19 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Email Operations
     fun toggleStar(emailId: Long, currentStatus: Boolean) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             repository.updateStarredStatus(emailId, !currentStatus)
         }
     }
 
     fun markEmailAsRead(emailId: Long, isRead: Boolean) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             repository.updateReadStatus(emailId, isRead)
         }
     }
 
     fun moveToFolder(emailId: Long, folder: EmailFolder) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             repository.updateFolder(emailId, folder)
             _uiState.update {
                 it.copy(
@@ -270,7 +270,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun deleteEmail(emailId: Long) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             repository.deleteEmail(emailId)
             _uiState.update {
                 it.copy(
@@ -288,7 +288,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         isDraft: Boolean = false,
         onComplete: (Boolean, String) -> Unit = { _, _ -> }
     ) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             if (to.isBlank()) {
                 val errorMsg = "Recipient email cannot be blank."
                 _uiState.update { it.copy(aiStatusMessage = errorMsg) }
@@ -405,7 +405,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         threadId: String? = null,
         draftId: Long = 0
     ) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val draft = DraftMessageEntity(
                 draftId = draftId,
                 threadId = threadId,
@@ -421,7 +421,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun deleteDraftMessage(draftId: Long) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             repository.deleteOfflineDraft(draftId)
             _uiState.update { it.copy(aiStatusMessage = "Draft deleted") }
         }
@@ -429,7 +429,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun summarizeSelectedEmail() {
         val email = _uiState.value.selectedEmail ?: return
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isAnalyzing = true) }
             val (summary, actionItems) = repository.summarizeEmail(
                 sender = email.senderName,
@@ -448,7 +448,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun generateSmartReplyForSelected(replyIntent: String) {
         val email = _uiState.value.selectedEmail ?: return
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isAnalyzing = true) }
             val userName = _uiState.value.userProfile.displayName.ifBlank { "User" }
             val userEmail = _uiState.value.userProfile.email.ifBlank { "user@example.com" }
@@ -471,7 +471,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun loadSmartRepliesForEmail(email: EmailEntity) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isAnalyzingSmartReplies = true) }
             val userName = _uiState.value.userProfile.displayName.ifBlank { "User" }
             val userEmail = _uiState.value.userProfile.email.ifBlank { "user@example.com" }
@@ -495,7 +495,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(selectedSmartReply = option) }
         val currentEmail = _uiState.value.selectedEmail
         if (currentEmail != null) {
-            viewModelScope.launch {
+            viewModelScope.launch(exceptionHandler) {
                 repository.updateReplyDraft(currentEmail.id, option.fullDraft)
                 _uiState.update {
                     it.copy(selectedEmail = currentEmail.copy(replyDraft = option.fullDraft))
@@ -544,7 +544,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun generateColdMail() {
         val state = _uiState.value
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update {
                 it.copy(
                     isGeneratingColdMail = true,
@@ -579,7 +579,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     fun searchTargetCompanyLocation() {
         val state = _uiState.value
         if (state.coldTargetCompany.isBlank()) return
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isSearchingMaps = true) }
             val result = repository.searchCompanyLocationWithMaps(
                 company = state.coldTargetCompany,
@@ -595,7 +595,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun analyzeImageDocument(bitmap: Bitmap) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isAnalyzingVision = true) }
             val analysis = repository.analyzeImageDocument(
                 bitmap = bitmap,
@@ -612,7 +612,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun transcribeVoiceMemo(audioBytes: ByteArray = ByteArray(0)) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isRecordingVoice = true) }
             val text = repository.transcribeAudioMemo(audioBytes)
             _uiState.update {
@@ -628,7 +628,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun generateCampaignBanner(prompt: String) {
         val state = _uiState.value
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isGeneratingBanner = true) }
             val url = repository.generateCampaignImage(
                 prompt = prompt,
@@ -636,9 +636,13 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             )
             _uiState.update {
                 it.copy(
-                    generatedBannerUrl = url,
                     isGeneratingBanner = false,
-                    aiStatusMessage = "${state.selectedImageSize} banner generated via Imagen!"
+                    generatedBannerUrl = url,
+                    aiStatusMessage = if (url != null) {
+                        "${state.selectedImageSize} banner generated via Imagen!"
+                    } else {
+                        "Banner generation failed. Please try again."
+                    }
                 )
             }
         }
@@ -647,7 +651,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     fun saveGeneratedColdCampaign() {
         val state = _uiState.value
         if (state.generatedColdMail.isBlank()) return
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val campaign = ColdMailCampaign(
                 title = "Cold Pitch: ${state.coldTargetCompany} (${state.coldTargetRole})",
                 targetName = state.coldTargetName,
@@ -672,13 +676,13 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Automations
     fun toggleAutomationRule(rule: AutomationRule) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             repository.toggleRule(rule.id, !rule.isEnabled)
         }
     }
 
     fun triggerAutomationEngine() {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(aiStatusMessage = "⚡ Running automation engine on mailbox...") }
             val activeRules = automationRules.value.filter { it.isEnabled }
             for (rule in activeRules) {
@@ -700,7 +704,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         actionType: String,
         actionParam: String
     ) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val rule = AutomationRule(
                 name = name,
                 description = desc,
@@ -720,7 +724,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Social Hub
     fun toggleSocialConnection(platform: SocialPlatform, isConnected: Boolean) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             repository.updateSocialConnection(platform, isConnected)
         }
     }
@@ -731,7 +735,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         pitchBody: String,
         outreachType: String
     ) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val adaptedMessage = repository.convertToSocialOutreach(platform, target, pitchBody)
             val item = SocialOutreachItem(
                 platform = platform,
@@ -748,7 +752,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun sendSocialOutreach(id: Long) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             repository.markSocialOutreachSent(id)
             _uiState.update { it.copy(aiStatusMessage = "Outreach marked as sent!") }
         }
@@ -768,7 +772,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             )
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val unreadCount = unreadCount.value
             val context = "Inbox: $unreadCount unread emails. User: ${_uiState.value.userProfile.displayName} (${_uiState.value.userProfile.email}). Active cold outreach campaigns: ${coldCampaigns.value.size}."
             val reply = repository.askAssistant(userPrompt, context)
@@ -786,7 +790,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun signInWithGoogle(webClientId: String? = null) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isAuthenticating = true) }
             val result = authService.signInWithGoogle(webClientId)
             when (result) {
@@ -820,12 +824,17 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun signOutUser() {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             authService.signOut()
             repository.clearUserDataOnSignOut()
             _uiState.update {
                 it.copy(
                     showAccountDialog = false,
+                    scheduledEmails = emptyList(),
+                    generatedColdMail = "",
+                    generatedBannerUrl = null,
+                    smartReplies = emptyList(),
+                    selectedSmartReply = null,
                     aiStatusMessage = "Signed out. Local session cache cleared."
                 )
             }
@@ -849,7 +858,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun triggerSync() {
         if (_uiState.value.isSyncing) return
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update {
                 it.copy(
                     isSyncing = true,
@@ -907,7 +916,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 aiStatusMessage = "Notification preferences updated"
             )
         }
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val userId = authUserState.value.uid
             if (userId.isNotBlank()) {
                 firestoreService.saveNotificationPreferencesToCloud(userId, prefs)
@@ -939,7 +948,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             )
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val email = EmailEntity(
                 senderName = _uiState.value.userProfile.displayName.ifBlank { "User" },
                 senderEmail = _uiState.value.userProfile.email.ifBlank { "user@example.com" },
@@ -964,7 +973,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun summarizeEmailThreadWithGemini(email: EmailEntity) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isSummarizingThread = true) }
             val (summary, actionItems) = repository.summarizeEmail(
                 sender = email.senderName,
@@ -1014,7 +1023,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         tone: String,
         onResult: (String, String) -> Unit
     ) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             try {
                 val prompt = "Generate a cold outreach email based on these keywords:\n$contextKeywords\nFramework: $framework\nTone: $tone\nFormat output as:\nSubject: [Subject Here]\n\n[Body Here]"
                 val response = com.example.data.api.GeminiApiClient.callGemini(prompt)
@@ -1049,7 +1058,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun loadSmartRepliesForEmail(email: EmailEntity, forceRefresh: Boolean = false) {
         if (forceRefresh || _uiState.value.smartReplies.isEmpty()) {
-            viewModelScope.launch {
+            viewModelScope.launch(exceptionHandler) {
                 _uiState.update { it.copy(isAnalyzingSmartReplies = true) }
                 try {
                     val prompt = "Generate 3 quick smart reply options for this email:\nFrom: ${email.senderName}\nSubject: ${email.subject}\nBody: ${email.body}\nFormat as 3 distinct short reply options separated by ---"
@@ -1085,12 +1094,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             "summarize" -> _uiState.value.selectedEmail?.let { summarizeSelectedEmail() }
             "sync" -> triggerSync()
             else -> openComposeWithContent()
-        }
-    }
-
-    fun linkCustomGoogleEmail(email: String) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(aiStatusMessage = "Account linked: $email") }
         }
     }
 }
