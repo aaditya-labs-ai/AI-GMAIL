@@ -31,7 +31,6 @@ fun AccountAuthDialog(
     isAuthenticating: Boolean,
     onSignInWithGoogle: () -> Unit,
     onSignOut: () -> Unit,
-    onLinkCustomEmail: ((String) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
