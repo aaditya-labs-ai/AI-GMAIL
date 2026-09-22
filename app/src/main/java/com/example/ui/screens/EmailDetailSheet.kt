@@ -55,6 +55,7 @@ fun EmailDetailSheet(
     var threadQuickReplyText by remember { mutableStateOf("") }
     var isReplyingInThread by remember { mutableStateOf(false) }
     var pendingSendReplyDraft by remember { mutableStateOf<String?>(null) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     // Parse attachments from email
     val emailAttachments = remember(email.attachmentNames) {
@@ -170,8 +171,7 @@ fun EmailDetailSheet(
                         Icon(Icons.Outlined.Archive, contentDescription = "Archive", tint = Text3dSecondary)
                     }
                     IconButton(onClick = {
-                        viewModel.deleteEmail(email.id)
-                        onDismiss()
+                        showDeleteConfirmDialog = true
                     }) {
                         Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = GmailCoral)
                     }
@@ -715,6 +715,49 @@ fun EmailDetailSheet(
                 dismissButton = {
                     TextButton(onClick = { pendingSendReplyDraft = null }) {
                         Text("Review", color = Text3dSecondary)
+                    }
+                },
+                containerColor = Color.White,
+                shape = RoundedCornerShape(20.dp)
+            )
+        }
+
+        // Delete Confirmation Dialog — destructive local action requires explicit confirmation
+        if (showDeleteConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirmDialog = false },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Outlined.Delete, contentDescription = null, tint = GmailCoral)
+                        Text("Confirm Deletion", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Text3dPrimary)
+                    }
+                },
+                text = {
+                    Text(
+                        "Delete this email from your local mailbox? This cannot be undone.",
+                        fontSize = 13.sp,
+                        color = Text3dPrimary
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showDeleteConfirmDialog = false
+                            viewModel.deleteEmail(email.id)
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = GmailCoral),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Delete", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                        Text("Cancel", color = Text3dSecondary)
                     }
                 },
                 containerColor = Color.White,
