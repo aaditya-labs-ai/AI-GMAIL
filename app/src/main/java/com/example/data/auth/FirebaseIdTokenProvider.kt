@@ -20,7 +20,7 @@ object FirebaseIdTokenProvider {
     suspend fun currentIdToken(forceRefresh: Boolean = false): String? {
         return try {
             val user = FirebaseAuth.getInstance().currentUser ?: return null
-            user.getIdToken(forceRefresh).await()
+            user.getIdToken(forceRefresh).await()?.token
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             SafeLogger.w("FirebaseIdTokenProvider", "Unable to obtain Firebase ID token: ${e.message}")
