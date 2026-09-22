@@ -71,10 +71,10 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - FILE: `.env.example` (new)
 - PROBLEM: The secrets Gradle plugin and README depended on `.env.example`, but the file was absent — fresh clones lack BuildConfig fields (`FIREBASE_API_KEY`, etc.), and contributors had no placeholder template.
 - ROOT CAUSE: File was never committed.
-- FIX: Added `.env.example` with placeholders only (no real credentials), including new `AI_BACKEND_URL`.
+- FIX: Added `.env.example` with placeholders only (no real credentials), including `AI_BACKEND_URL` and `RECAPTCHA_SITE_KEY`.
 - TEST: Build with only `.env.example` present (CI does this).
 - COMMIT: (security: harden logging and secret handling)
-- STATUS: Verified (placeholders only, history-scanned).
+- STATUS: Verified (placeholders only, history-scanned; CI builds green with only this file present).
 
 ## SEC-007 — Backend URL hardcoded placeholder
 - DATE: 2026-09-22
@@ -95,10 +95,10 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - FILE: `app/src/main/java/com/example/GmailAssistantApp.kt`
 - PROBLEM: `firebase-appcheck-recaptcha` dependency was present but App Check was never installed, so no attestation tokens were ever attached to Firebase traffic.
 - ROOT CAUSE: Initialization code missing.
-- FIX: `GmailAssistantApp` now installs `ReCaptchaAppCheckProviderFactory` as soon as a Firebase app exists, before protected services are used. Enforcement intentionally NOT enabled (must be enabled in Firebase Console after traffic validation). No debug token committed.
+- FIX: `GmailAssistantApp` now installs `RecaptchaAppCheckProviderFactory.getInstance(RECAPTCHA_SITE_KEY)` as soon as a Firebase app exists, before protected services are used. Enforcement intentionally NOT enabled (must be enabled in Firebase Console after traffic validation). No debug token committed.
 - TEST: Requires manual testing (Firebase Console → App Check → Network insights).
-- COMMIT: (security: harden Firebase/Firestore authorization)
-- STATUS: NOT VERIFIED at runtime (needs Firebase project).
+- COMMIT: (security: harden Firebase/Firestore authorization; fix: pass reCAPTCHA site key to App Check factory)
+- STATUS: NOT VERIFIED at runtime (needs Firebase project + RECAPTCHA_SITE_KEY in .env); compile + unit tests verified in CI run 35759119652.
 
 ## SEC-009 — Unhandled coroutine exceptions in ViewModel
 - DATE: 2026-09-22
@@ -146,7 +146,7 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - FIX: Added `security-ci.yml`: gitleaks secret scan, `gradle test` unit suite, CodeQL java-kotlin analysis. Official/well-established actions only; least-privilege permissions; no secrets in YAML.
 - TEST: The workflow runs on the PR itself.
 - COMMIT: (chore: add repository security/CI checks)
-- STATUS: NOT VERIFIED until first CI run (Gradle/JDK versions may need adjustment — no wrapper is committed).
+- STATUS: VERIFIED — full green run 35759119652 (2026-09-22): secret scan ✅, CodeQL ✅, 28/28 unit tests ✅.
 
 ## SEC-013 — README overstated security
 - DATE: 2026-09-22
@@ -188,3 +188,39 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - PROBLEM: `isMinifyEnabled = false` in release; R8 shrinking/obfuscation disabled.
 - FIX: Left unchanged deliberately — enabling R8 without device testing risks breaking release behavior. Recommend enabling after regression testing on a release build.
 - STATUS: OPEN (recommendation).
+
+## SEC-017 — CI toolchain incompatible with AGP 9.1.1
+- DATE: 2026-09-22
+- SEVERITY: Medium
+- CATEGORY: CI/CD / reliability
+- FILE: `.github/workflows/security-ci.yml`
+- PROBLEM: The unit-test job pinned Gradle 9.2.0 and CodeQL `autobuild` resolved Gradle 8.6 — both below the minimum (9.3.1) required by Android Gradle Plugin 9.1.1, so every build failed at the version check before compiling anything.
+- ROOT CAUSE: Gradle version chosen without confirming AGP's minimum requirement; `autobuild` had no way to know the project's requirement (no wrapper is committed).
+- FIX: Both jobs now install Gradle 9.3.1; CodeQL `autobuild` replaced with an explicit `compileDebugSources` step using the same toolchain; CodeQL action migrated v3 → v4 (v3 deprecation December 2026).
+- TEST: CI run 35759119652 green.
+- COMMIT: (fix: use Gradle 9.3.1 for AGP 9.1.1 and migrate CodeQL to v4)
+- STATUS: Verified.
+
+## SEC-018 — App Check integration used wrong Firebase API
+- DATE: 2026-09-22
+- SEVERITY: Medium
+- CATEGORY: Firebase hardening / correctness
+- FILES: `app/src/main/java/com/example/GmailAssistantApp.kt`, `app/src/main/java/com/example/data/auth/FirebaseIdTokenProvider.kt`, `.env.example`
+- PROBLEM: (a) `ReCaptchaAppCheckProviderFactory` does not exist — the class in `firebase-appcheck-recaptcha` 19.2.0 is `RecaptchaAppCheckProviderFactory`; (b) its `getInstance()` requires the reCAPTCHA Enterprise site key parameter; (c) `FirebaseIdTokenProvider` awaited the `GetTokenResult` wrapper instead of its `.token` string, so the Authorization header would have been a `toString()` of the result object, not the token.
+- ROOT CAUSE: Written from memory without compiling against the resolved dependency versions; first compile happened in CI.
+- FIX: Correct class + `getInstance(siteKey)` with the key configurable via `RECAPTCHA_SITE_KEY` in `.env` (App Check skipped fail-safe when unconfigured); token unwrapped with `.await()?.token`.
+- TEST: Compiled and all 14 AiRepositorySecurityTest auth/validation tests pass in CI (including Bearer header format).
+- COMMIT: (fix: correct App Check factory class name and ID token result unwrapping; fix: pass reCAPTCHA site key to App Check factory)
+- STATUS: Verified (compile + unit tests). Runtime attestation still requires Firebase/Google Cloud configuration.
+
+## SEC-019 — Pre-existing test suite had never been executed
+- DATE: 2026-09-22
+- SEVERITY: Medium
+- CATEGORY: Testability
+- FILES: `app/src/test/java/com/example/` (5 test classes)
+- PROBLEM: With no CI before this audit, the committed test suite had never run: 3 classes crashed on a plain JVM (`android.util.Log`/`Base64` "not mocked"); `ExampleRobolectricTest` expected app name "Gmail Assistant" but the app is "Aura Mail"; the SafeLogger AIza fixture was 34 chars after the prefix (real keys are 35, so the redaction regex correctly did not match); the HTML-sanitization assertion did not match the tag→space stripping behavior.
+- ROOT CAUSE: Tests written but never executed; expectations drifted from implementation.
+- FIX: Robolectric runner added to the 3 affected classes (Robolectric was already a project test dependency); expectations corrected to the actual behavior. Security-relevant assertions (tag stripping, token redaction, session invalidation) are all still asserted — no coverage was weakened.
+- TEST: 28/28 unit tests pass in CI run 35759119652.
+- COMMIT: (test: repair pre-existing broken test suite; test: match html sanitization assertion to actual stripping behavior)
+- STATUS: Verified.
