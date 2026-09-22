@@ -71,6 +71,9 @@ interface ColdMailDao {
 
     @Query("SELECT * FROM cold_mail_campaigns WHERE id = :id")
     suspend fun getCampaignById(id: Long): ColdMailCampaign?
+
+    @Query("DELETE FROM cold_mail_campaigns")
+    suspend fun clearAllCampaigns()
 }
 
 @Dao
@@ -101,6 +104,12 @@ interface AutomationDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLog(log: AutomationLog)
+
+    @Query("DELETE FROM automation_rules")
+    suspend fun clearAllRules()
+
+    @Query("DELETE FROM automation_logs")
+    suspend fun clearAllLogs()
 }
 
 @Dao
@@ -125,6 +134,9 @@ interface SocialHubDao {
 
     @Query("UPDATE social_outreach_posts SET isSent = 1 WHERE id = :id")
     suspend fun markOutreachSent(id: Long)
+
+    @Query("DELETE FROM social_outreach_posts")
+    suspend fun clearAllOutreach()
 }
 
 /**
