@@ -248,4 +248,4 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - SECURITY NOTES: Secrets are referenced only in `env:` blocks; the workflow never echoes them. The signed release APK is uploaded as a run artifact (readable by anyone with repository read access — the repository is public, so treat it as a published build).
 - TEST: CI build of the release APK (unsigned until secrets are configured).
 - COMMIT: (feat(ci): release build job wired to encrypted secrets; R8 enabled for release)
-- STATUS: Build verified (unsigned path). Signed path requires the repository owner to add the three secrets — documented in README.
+- STATUS: Verified — CI run 35816328148 (2026-09-23): all seven jobs green, including a minified, resource-shrunk (R8) release APK (unsigned until secrets are configured). Signed path requires the repository owner to add the three secrets — documented in README. Runtime verification of the minified build on a device is still pending (login, AI generation, Gmail flows).
