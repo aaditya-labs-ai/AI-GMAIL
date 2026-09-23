@@ -69,6 +69,24 @@ Known limitations (documented, not hidden):
    plugin flow (it is gitignored).
 3. Build: `gradle assembleDebug` (tests: `gradle test`).
 
+## 📦 Release builds & signing in CI
+
+The `release-build` CI job builds a minified (R8) release APK on every push. To make it
+produce a **signed** APK, add three encrypted secrets in GitHub
+(**Settings → Secrets and variables → Actions → New repository secret**):
+
+| Secret name | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | your upload keystore file, Base64-encoded: `base64 -w 0 my-upload-key.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | the keystore (store) password |
+| `ANDROID_KEY_PASSWORD` | the key password (key alias is `upload`, from `app/build.gradle.kts`) |
+
+Until these exist, the job builds an unsigned release APK — still useful to verify the
+R8/ProGuard pass. Secrets are never printed in logs and the keystore is never committed.
+The signed APK appears under each workflow run's **Artifacts** (`release-apk`).
+If you rotate your keystore, update the secrets; old artifacts remain signed with the
+old key.
+
 ## 📧 Gmail OAuth setup (required for live Gmail features)
 
 Firebase Google Sign-In does **not** grant Gmail API scopes. To enable live inbox sync
