@@ -42,9 +42,19 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      // R8 code shrinking + resource shrinking for release builds (SEC-016).
+      // Keep rules live in app/proguard-rules.pro; the release CI job verifies
+      // the full R8 pass on every push.
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      // Sign only when a keystore is provided via environment variables (CI
+      // encrypted secrets, or local env vars). When it is absent, Gradle
+      // produces an unsigned release APK so the build still verifies R8.
+      val releaseKeystorePath = System.getenv("KEYSTORE_PATH")
+      if (!releaseKeystorePath.isNullOrBlank() && file(releaseKeystorePath).exists()) {
+        signingConfig = signingConfigs.getByName("release")
+      }
     }
     debug {
       // Use the project debug keystore when present. On fresh checkouts and CI
