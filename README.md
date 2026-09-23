@@ -98,9 +98,14 @@ and sending you must additionally:
    `https://www.googleapis.com/auth/gmail.send`.
 3. Configure an OAuth client for your application signature/package
    (`com.aistudio.gmailassistant.kdqpxz`).
-4. Implement the token acquisition step that feeds `GmailOAuthManager.setSession`
-   (currently not wired to a UI flow — this is tracked as SEC-014 in
-   `docs/HARDENING_LOG.md`).
+4. In the app: open **Settings → Gmail Connection → Connect Gmail Account**.
+   The token acquisition flow is implemented (`GmailAuthorizationClient`, least
+   privilege: `gmail.readonly` + `gmail.send`, in-memory token only, fails
+   closed) — see SEC-014 in `docs/HARDENING_LOG.md`. It will show an error
+   until steps 1–3 are configured, which is intended.
+
+Also deploy the hardened `firestore.rules` (SEC-015): Firebase Console →
+Firestore Database → Rules → paste the contents of `firestore.rules` → Publish.
 
 ---
 
