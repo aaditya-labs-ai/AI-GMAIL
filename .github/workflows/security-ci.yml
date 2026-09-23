@@ -39,6 +39,45 @@ jobs:
       - name: Run unit tests
         run: gradle test --no-daemon --stacktrace
 
+  debug-build:
+    name: Debug APK assembly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.3.1
+      # No keystore is committed (by design): the debug build type falls back to
+      # AGP's default debug signing when debug.keystore is absent, so this works
+      # on a fresh checkout.
+      - name: Assemble debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  lint:
+    name: Android Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.3.1
+      - name: Run Android Lint (debug variant)
+        run: gradle lintDebug --no-daemon --stacktrace
+
   codeql:
     name: CodeQL analysis (Java/Kotlin)
     runs-on: ubuntu-latest
