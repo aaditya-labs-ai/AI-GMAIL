@@ -127,6 +127,8 @@ dependencies {
   implementation(libs.androidx.credentials)
   implementation(libs.androidx.credentials.play.services)
   implementation(libs.googleid)
+  // Gmail OAuth token acquisition (Authorization Client) — SEC-014:
+  implementation(libs.play.services.auth)
   implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
