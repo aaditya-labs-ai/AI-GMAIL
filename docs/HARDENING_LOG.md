@@ -168,7 +168,7 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - ROOT CAUSE: The OAuth acquisition step was never built; requires a Google Cloud OAuth client with Gmail scopes (external configuration).
 - FIX (2026-09-23): Implemented the in-app acquisition flow — new `app/src/main/java/com/example/data/auth/GmailAuthorizationClient.kt` (Google Play Services Authorization Client, `play-services-auth` 22.0.0; API surface verified against the published AAR). Requests only the least-privilege scopes (`gmail.readonly` + `gmail.send`), keeps the token in memory only (GmailOAuthManager), and fails closed on any error. UI: Settings → "Gmail Connection" with Connect / Disconnect (revoke + purge). No credentials are stored or invented; the flow activates only once the Google Cloud OAuth client + consent screen exist.
 - TEST: Unit tests in `GmailAuthorizationClientTest` (least-privilege scopes; fails closed on missing consent result). End-to-end authorization REQUIRES MANUAL TESTING after Google Cloud configuration (Gmail API enabled, OAuth consent screen with the two scopes, OAuth client for the app package + signing SHA-1).
-- STATUS: PARTIALLY FIXED — code complete and verified in CI; end-to-end activation requires Google Cloud configuration + on-device testing (tracked in README "Gmail OAuth setup").
+- STATUS: PARTIALLY FIXED — code complete, all 6 CI jobs green (run 35819241398, 2026-09-23, including 3 new unit tests); end-to-end activation requires Google Cloud configuration + on-device testing (tracked in README "Gmail OAuth setup").
 
 ## SEC-015 — Firestore user document writes unconstrained
 - DATE: 2026-09-22
