@@ -269,7 +269,6 @@ fun MainAppScreen(
             isAuthenticating = uiState.isAuthenticating,
             onSignInWithGoogle = { viewModel.signInWithGoogle() },
             onSignOut = { viewModel.signOutUser() },
-            onLinkCustomEmail = { email -> viewModel.linkCustomGoogleEmail(email) },
             onDismiss = { viewModel.setAccountDialogVisible(false) }
         )
     }

@@ -28,10 +28,11 @@ class SafeLoggerTest {
 
     @Test
     fun `test sanitize redacts standalone Google AIza API keys`() {
-        val rawMessage = "Key value: AIzaSyD9876543210abcdefghijklmnopqrstu"
+        // Real Google API keys are "AIza" followed by exactly 35 characters (39 total).
+        val rawMessage = "Key value: AIzaSyD9876543210abcdefghijklmnopqrstuv"
         val sanitized = SafeLogger.sanitize(rawMessage)
 
-        assertFalse(sanitized.contains("AIzaSyD9876543210abcdefghijklmnopqrstu"))
+        assertFalse(sanitized.contains("AIzaSyD9876543210abcdefghijklmnopqrstuv"))
         assertTrue(sanitized.contains("[REDACTED_API_KEY]"))
     }
 }

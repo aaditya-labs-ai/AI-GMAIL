@@ -25,7 +25,9 @@ android {
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+      // KEYSTORE_PATH may be unset OR an empty string in CI (when signing secrets
+      // are not configured) — both must fall back to the default path.
+      val keystorePath = System.getenv("KEYSTORE_PATH")?.takeIf { it.isNotBlank() } ?: "${rootDir}/my-upload-key.jks"
       storeFile = file(keystorePath)
       storePassword = System.getenv("STORE_PASSWORD")
       keyAlias = "upload"
@@ -42,11 +44,28 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      // R8 code shrinking + resource shrinking for release builds (SEC-016).
+      // Keep rules live in app/proguard-rules.pro; the release CI job verifies
+      // the full R8 pass on every push.
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      // Sign only when a keystore is provided via environment variables (CI
+      // encrypted secrets, or local env vars). When it is absent, Gradle
+      // produces an unsigned release APK so the build still verifies R8.
+      val releaseKeystorePath = System.getenv("KEYSTORE_PATH")
+      if (!releaseKeystorePath.isNullOrBlank() && file(releaseKeystorePath).exists()) {
+        signingConfig = signingConfigs.getByName("release")
+      }
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      // Use the project debug keystore when present. On fresh checkouts and CI
+      // (where debug.keystore is intentionally gitignored), fall back to AGP's
+      // default debug signing so `assembleDebug` works everywhere.
+      if (file("${rootDir}/debug.keystore").exists()) {
+        signingConfig = signingConfigs.getByName("debugConfig")
+      }
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -108,9 +127,12 @@ dependencies {
   implementation(libs.androidx.credentials)
   implementation(libs.androidx.credentials.play.services)
   implementation(libs.googleid)
+  // Gmail OAuth token acquisition (Authorization Client) — SEC-014:
+  implementation(libs.play.services.auth)
   implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.kotlinx.coroutines.play.services)
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)

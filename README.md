@@ -1,6 +1,6 @@
 # Aura Mail — AI-Powered Gmail Assistant & Outreach Studio
 
-A luxury, executive-grade AI email client and automated assistant built with Kotlin, Jetpack Compose, Material 3, Room Database, and Google Gemini API, inspired by modern editorial aesthetics.
+A luxury, executive-grade AI email client and automated assistant built with Kotlin, Jetpack Compose, Material 3, Room Database, and a secure backend AI proxy.
 
 ---
 
@@ -16,44 +16,109 @@ A luxury, executive-grade AI email client and automated assistant built with Kot
 
 ---
 
-## 🔒 Security Audit & 5-Stage Verification Report
+## 🔒 Security Overview (honest, evidence-based)
 
-This application has undergone a full-spectrum security audit addressing all commands specified in the security specification:
+Full details live in [`SECURITY.md`](SECURITY.md), [`docs/SECURITY_ARCHITECTURE.md`](docs/SECURITY_ARCHITECTURE.md),
+[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md), [`docs/HARDENING_LOG.md`](docs/HARDENING_LOG.md), and
+[`docs/BACKEND_SECURITY_CONTRACT.md`](docs/BACKEND_SECURITY_CONTRACT.md).
 
-### Check 1: Secret Leak Prevention (Gitleaks Standard)
-- **Zero Hardcoded Secrets**: All API keys, Client IDs, and OAuth credentials have been extracted from source code and are dynamically injected via `BuildConfig` using Gradle Secrets and `.env` files.
-- **Gitignore Protection**: `.env`, `debug.keystore`, build caches, and sensitive credential files are strictly excluded from source control.
-- **Placeholder Configuration**: `.env.example` provides non-sensitive template definitions.
-- **Log Sanitation**: No authorization headers, bearer tokens, or API keys are printed in Android `Log` or OkHttp interceptors.
+What is implemented and verified in source:
 
-### Check 2: Personal Data Flow Audit (Bearer Standard)
-- **PII Protection**: User emails, contact names, and email contents are stored exclusively on-device in the local SQLite Room database with encrypted storage considerations.
-- **Logger Redaction**: Network logging utilizes custom redactions so headers like `Authorization` and `X-Goog-Api-Key` are hidden.
-- **Credential Storage**: Google Sign-In tokens are managed securely via Jetpack `CredentialManager` without storing raw passwords or plain secrets on disk.
-- **User Disconnect & Data Purge**: Users can sign out and clear offline caches at any time through the Account Dialog.
+- **Separate security systems**: Firebase Authentication (identity), Gmail OAuth 2.0
+  with least-privilege scopes (mailbox authorization), and per-request Firebase ID
+  tokens for AI backend calls (AI authorization). They are never conflated.
+- **Authenticated AI requests**: every AI request carries
+  `Authorization: Bearer <firebase-id-token>` and fails closed when no user is signed in.
+- **Client-side request policy**: prompt length cap, model allowlist, temperature and
+  thinking-budget bounds, image/audio payload size limits (see `AiRequestPolicy`).
+- **No secrets in source**: API keys and IDs come from `.env` via the Secrets Gradle
+  Plugin; `.gitignore` excludes `.env`, keystores, and `google-services.json`.
+- **Log hygiene**: `SafeLogger` redacts tokens/keys; debug logs stripped in release;
+  OkHttp logging off for the AI backend client; user-facing errors never contain
+  backend exception details.
+- **Privacy on sign-out**: all local user data (emails, drafts, campaigns, rules,
+  outreach) is purged; Gmail tokens live in memory only and are never persisted.
+- **Prompt-injection boundaries**: email content is passed to AI wrapped in
+  untrusted-content tags and is never treated as application instructions; the AI can
+  only draft/summarize — sending email requires explicit user confirmation.
+- **Manifest hardening**: `usesCleartextTraffic="false"`, `allowBackup="false"`,
+  backups exclude databases and preferences; only the launcher activity is exported.
 
-### Check 3: Pre-Deploy Production Audit
-- **TLS/SSL Enforcement**: All network endpoints (Gemini API, Google OAuth, Gmail REST API, Firebase) enforce HTTPS / TLS 1.3 encryption.
-- **Manifest Hardening**: Cleartext traffic (`android:usesCleartextTraffic="false"`) and unencrypted local backups (`android:allowBackup="false"`) are strictly disabled in `AndroidManifest.xml`.
-- **Safe Error Handling**: Network and AI generation failures gracefully fall back to local offline Room database caches without exposing raw stack traces or internal backend schemas to the UI.
+Known limitations (documented, not hidden):
 
-### Check 4: Deep Security Audit for Complex Logic
-- **Parameterized SQL**: All database operations in `EmailDao`, `ColdMailDao`, `AutomationDao`, and `SocialHubDao` use Room's parameterized SQL queries to prevent SQL injection vulnerabilities.
-- **XSS & Injection Protection**: HTML email bodies and dynamic prompts are sanitized before rendering or forwarding to the Gemini models.
-- **Authorization Gating**: Cloud operations require authenticated Google accounts (`request.auth != null && request.auth.uid == userId`).
-
-### Check 5: Attacker's Perspective Review
-- **ID Manipulation & IDOR**: Email selections and draft mutations validate ownership and thread consistency before execution.
-- **Rate Limiting & Cost Protection**: Gemini API requests include client-side debouncing, token caps, and temperature controls to prevent resource exhaustion.
-- **Business Logic Integrity**: Draft generation and message sending actions require explicit user confirmation or automated rule criteria.
+- **Gmail OAuth acquisition is not yet implemented** — the app fails closed with an
+  authorization-required message until a Google Cloud OAuth client is configured
+  (see "Gmail OAuth setup" below).
+- **The AI backend service is not part of this repository** — `AI_BACKEND_URL` must be
+  configured in `.env` after deploying a backend that implements
+  [`docs/BACKEND_SECURITY_CONTRACT.md`](docs/BACKEND_SECURITY_CONTRACT.md).
+- **App Check is installed but enforcement is off** — enable it in the Firebase Console
+  only after verifying legitimate traffic.
 
 ---
 
-## ⚠️ Security Notice: Git History Secret Rotation
+## ⚙️ Local setup
+
+1. Copy `.env.example` to `.env` and fill in your real values (never commit `.env`):
+   - `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_APPLICATION_ID`
+     (Firebase Console → Project settings → General → Your apps)
+   - `GOOGLE_WEB_CLIENT_ID` (Google Cloud Console → Credentials → OAuth client, type
+     "Web application")
+   - `AI_BACKEND_URL` (your authenticated AI backend, HTTPS only)
+2. Place `google-services.json` in the project root if you use the google-services
+   plugin flow (it is gitignored).
+3. Build: `gradle assembleDebug` (tests: `gradle test`).
+
+## 📦 Release builds & signing in CI
+
+The `release-build` CI job builds a minified (R8) release APK on every push. To make it
+produce a **signed** APK, add three encrypted secrets in GitHub
+(**Settings → Secrets and variables → Actions → New repository secret**):
+
+| Secret name | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | your upload keystore file, Base64-encoded: `base64 -w 0 my-upload-key.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | the keystore (store) password |
+| `ANDROID_KEY_PASSWORD` | the key password (key alias is `upload`, from `app/build.gradle.kts`) |
+
+Until these exist, the job builds an unsigned release APK — still useful to verify the
+R8/ProGuard pass. Secrets are never printed in logs and the keystore is never committed.
+The signed APK appears under each workflow run's **Artifacts** (`release-apk`).
+If you rotate your keystore, update the secrets; old artifacts remain signed with the
+old key.
+
+## 📧 Gmail OAuth setup (required for live Gmail features)
+
+Firebase Google Sign-In does **not** grant Gmail API scopes. To enable live inbox sync
+and sending you must additionally:
+
+1. In Google Cloud Console → APIs & Services → enable the **Gmail API**.
+2. Create an OAuth consent screen and configure the scopes
+   `https://www.googleapis.com/auth/gmail.readonly` and
+   `https://www.googleapis.com/auth/gmail.send`.
+3. Configure an OAuth client for your application signature/package
+   (`com.aistudio.gmailassistant.kdqpxz`).
+4. In the app: open **Settings → Gmail Connection → Connect Gmail Account**.
+   The token acquisition flow is implemented (`GmailAuthorizationClient`, least
+   privilege: `gmail.readonly` + `gmail.send`, in-memory token only, fails
+   closed) — see SEC-014 in `docs/HARDENING_LOG.md`. It will show an error
+   until steps 1–3 are configured, which is intended.
+
+Also deploy the hardened `firestore.rules` (SEC-015): Firebase Console →
+Firestore Database → Rules → paste the contents of `firestore.rules` → Publish.
+
+---
+
+## ⚠️ Security notice: credential rotation
 
 > [!WARNING]
 > **ROTATE ANY PREVIOUSLY USED CREDENTIALS BEFORE PRODUCTION DEPLOYMENT**
-> 
-> 1. Revoke/rotate previous OAuth client secrets and API keys in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+>
+> 1. Revoke/rotate previous OAuth client secrets and API keys in the
+>    [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
 > 2. Regenerate your **Gemini API Key** in [Google AI Studio](https://aistudio.google.com/app/apikey).
-> 3. Store new keys directly in AI Studio's Secrets panel or `.env`.
+> 3. Store new keys only in `.env` (local) or your backend's secret manager — never in source.
+>
+> Removing a secret from the latest commit does not revoke it; assume anything ever
+> committed stays compromised until rotated. (A full history scan on 2026-09-22 found
+> only placeholder values, but rotate out of caution.)

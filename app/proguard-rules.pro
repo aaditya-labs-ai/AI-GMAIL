@@ -12,6 +12,11 @@
 -keep class com.squareup.moshi.** { *; }
 -keep interface com.squareup.moshi.** { *; }
 
+# Kotlin reflection (used by Moshi's KotlinJsonAdapterFactory)
+-keep class kotlin.Metadata { *; }
+-keep class kotlin.reflect.jvm.internal.** { *; }
+-dontwarn kotlin.reflect.jvm.internal.**
+
 # Retrofit & OkHttp
 -keepattributes Signature
 -keepattributes Exceptions

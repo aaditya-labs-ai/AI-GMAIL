@@ -14,7 +14,7 @@ import java.io.ByteArrayOutputStream
  * No Gemini API key or credentials reside on the Android client.
  */
 object GeminiApiClient {
-    // Standard model identifiers supported by the backend
+    // Standard model identifiers supported by the backend (all allowlisted in AiRequestPolicy)
     const val MODEL_FLASH_GENERAL = "gemini-2.5-flash"
     const val MODEL_PRO_THINKING = "gemini-2.5-pro"
     const val MODEL_FLASH_LITE = "gemini-2.5-flash-lite"
@@ -24,15 +24,14 @@ object GeminiApiClient {
     private val aiRepository: AiRepository by lazy { AiRepository(AiBackendClient.api) }
 
     /**
-     * Standard Gemini API call via secure backend proxy with Prompt Injection Boundary defense
+     * Standard Gemini API call via secure backend proxy with Prompt Injection Boundary defense.
      */
     suspend fun callGemini(
         prompt: String,
         model: String = MODEL_FLASH_GENERAL,
         systemInstruction: String = "You are an intelligent executive email assistant and outreach co-pilot. Analyze incoming text objectively and generate high-caliber, structured responses.",
         temperature: Float = 0.4f,
-        thinkingBudget: Int? = null,
-        tools: List<Any>? = null
+        thinkingBudget: Int? = null
     ): String = withContext(Dispatchers.IO) {
         if (prompt.isBlank()) {
             return@withContext "Notice: Empty prompt provided."
@@ -42,12 +41,14 @@ object GeminiApiClient {
             prompt = prompt,
             model = model,
             systemInstruction = systemInstruction,
-            temperature = temperature
+            temperature = temperature,
+            thinkingBudget = thinkingBudget
         )
 
-        result.getOrElse { e ->
-            SafeLogger.e("GeminiApiClient", "AI backend proxy generation notice: ${e.message}")
-            "AI Assistant response (via secure backend): ${e.localizedMessage ?: "Unable to complete AI generation at this time."}"
+        result.getOrElse {
+            // Do not surface backend/provider exception details to the end user.
+            SafeLogger.e("GeminiApiClient", "AI backend request failed")
+            "Notice: the AI service could not complete this request. Please try again."
         }
     }
 
@@ -94,13 +95,15 @@ object GeminiApiClient {
             val base64Image = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 
             val result = aiRepository.analyzeImage(base64Image, prompt)
-            result.getOrElse { e ->
-                SafeLogger.e("GeminiApiClient", "Vision inspection error: ${e.message}")
-                "Document inspection note: ${e.localizedMessage ?: "Vision analysis completed via secure backend."}"
+            result.getOrElse {
+                // Do not surface backend/provider exception details to the end user.
+                SafeLogger.e("GeminiApiClient", "Vision analysis failed")
+                "Notice: image analysis could not be completed. Please try again."
             }
         } catch (e: Exception) {
-            SafeLogger.e("GeminiApiClient", "Vision image encoding error", e)
-            "Vision processing error: ${e.localizedMessage ?: e.message}"
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            SafeLogger.e("GeminiApiClient", "Vision image encoding error")
+            "Notice: the image could not be processed."
         }
     }
 
@@ -111,24 +114,27 @@ object GeminiApiClient {
         try {
             val base64Audio = Base64.encodeToString(audioBytes, Base64.NO_WRAP)
             val result = aiRepository.transcribeAudio(base64Audio)
-            result.getOrElse { e ->
-                SafeLogger.e("GeminiApiClient", "Audio transcription notice: ${e.message}")
-                "Voice memo transcription: ${e.localizedMessage ?: "Transcription processed."}"
+            result.getOrElse {
+                // Do not surface backend/provider exception details to the end user.
+                SafeLogger.e("GeminiApiClient", "Audio transcription failed")
+                "Notice: transcription could not be completed. Please try again."
             }
         } catch (e: Exception) {
-            SafeLogger.e("GeminiApiClient", "Audio processing error", e)
-            "Audio transcription error: ${e.localizedMessage ?: e.message}"
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            SafeLogger.e("GeminiApiClient", "Audio processing error")
+            "Notice: the audio could not be processed."
         }
     }
 
     /**
-     * Imagen generation helper via backend
+     * Imagen generation helper via backend.
+     * Returns null when generation fails — callers must not treat null as success.
      */
-    suspend fun generateImage(prompt: String, imageSize: String = "1K"): String = withContext(Dispatchers.IO) {
+    suspend fun generateImage(prompt: String, imageSize: String = "1K"): String? = withContext(Dispatchers.IO) {
         val result = aiRepository.generateWithConfig(
             prompt = "Generate marketing banner: $prompt [Size: $imageSize]",
             model = MODEL_IMAGE_GEN
         )
-        result.getOrElse { "Visual asset campaign generated for review." }
+        result.getOrNull()?.takeIf { it.isNotBlank() }
     }
 }
