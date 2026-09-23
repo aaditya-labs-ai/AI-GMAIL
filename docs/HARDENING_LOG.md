@@ -224,3 +224,15 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - TEST: 28/28 unit tests pass in CI run 35759119652.
 - COMMIT: (test: repair pre-existing broken test suite; test: match html sanitization assertion to actual stripping behavior)
 - STATUS: Verified.
+
+## SEC-020 — Debug build unusable on fresh checkouts; APK assembly and lint not verified in CI
+- DATE: 2026-09-23
+- SEVERITY: Medium
+- CATEGORY: Release hardening / CI completeness
+- FILES: `app/build.gradle.kts`, `.github/workflows/security-ci.yml`
+- PROBLEM: The debug build type unconditionally used the `debugConfig` signing config pointing at `${rootDir}/debug.keystore`, which is intentionally gitignored — so `assembleDebug` failed on any fresh checkout (including CI). Additionally, no CI job assembled a full APK or ran Android Lint, leaving those unverified.
+- ROOT CAUSE: Signing config assumed a developer-local keystore always exists.
+- FIX: The debug build type now uses the project keystore only when the file exists and otherwise falls back to AGP's default debug signing. CI gained two jobs: `Debug APK assembly` (`gradle assembleDebug`, APK uploaded as a build artifact) and `Android Lint` (`gradle lintDebug`). Existing jobs untouched.
+- TEST: CI run 35813957846 (2026-09-23): secret scan ✅, unit tests ✅, debug APK assembly ✅, Android Lint ✅, CodeQL ✅.
+- COMMIT: (fix: fall back to default debug signing when keystore is absent; ci: add debug APK assembly and Android Lint jobs)
+- STATUS: Verified.
