@@ -23,9 +23,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import com.example.data.auth.GmailAuthorizationClient
+import com.example.data.auth.GmailAuthorizationOutcome
+import com.example.data.auth.GmailOAuthManager
 import com.example.data.model.NotificationPreferences
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.AssistantViewModel
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -301,6 +310,163 @@ fun SettingsDialog(
                         ),
                         modifier = Modifier.testTag("toggle_quiet_hours")
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Gmail Connection (SEC-014): acquires the OAuth token that powers
+            // live inbox sync and sending. Fails closed until configured.
+            Text(
+                text = "GMAIL CONNECTION",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Text3dSecondary,
+                letterSpacing = 1.sp
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val gmailContext = LocalContext.current
+            val gmailAuthClient = remember { GmailAuthorizationClient(gmailContext) }
+            val gmailScope = rememberCoroutineScope()
+            var gmailConnected by remember { mutableStateOf(GmailOAuthManager.hasValidAuthorization()) }
+            var gmailBusy by remember { mutableStateOf(false) }
+            var gmailError by remember { mutableStateOf<String?>(null) }
+
+            val gmailConsentLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartIntentSenderForResult()
+            ) { result ->
+                when (val outcome = gmailAuthClient.handleConsentResult(result.data)) {
+                    is GmailAuthorizationOutcome.Authorized -> {
+                        gmailConnected = true
+                        gmailError = null
+                    }
+                    is GmailAuthorizationOutcome.Error -> gmailError = outcome.message
+                    is GmailAuthorizationOutcome.ConsentRequired ->
+                        gmailError = "Gmail consent screen could not be shown."
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(3.dp, RoundedCornerShape(20.dp), ambientColor = ShadowAmbient)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Light3dCardSubtle)
+                    .border(1.dp, Light3dBorder, RoundedCornerShape(20.dp))
+                    .padding(14.dp)
+                    .testTag("section_gmail_connection")
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(if (gmailConnected) Emerald3dLight else Color(0xFFE2E8F0)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Mail,
+                            contentDescription = null,
+                            tint = if (gmailConnected) Emerald3dDark else Text3dMuted,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = "Gmail Account",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = Text3dPrimary
+                        )
+                        Text(
+                            text = if (gmailConnected)
+                                "Connected — inbox sync and sending are active"
+                            else
+                                "Not connected — Gmail features are disabled",
+                            fontSize = 11.sp,
+                            color = Text3dSecondary
+                        )
+                    }
+                }
+
+                gmailError?.let { message ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = message,
+                        fontSize = 11.sp,
+                        color = GmailCoral,
+                        modifier = Modifier.testTag("text_gmail_error")
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (gmailConnected) {
+                    OutlinedButton(
+                        onClick = {
+                            if (gmailBusy) return@OutlinedButton
+                            gmailBusy = true
+                            gmailError = null
+                            gmailAuthClient.revokeAccess {
+                                gmailConnected = false
+                                gmailBusy = false
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("btn_disconnect_gmail"),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !gmailBusy
+                    ) {
+                        Icon(Icons.Default.LinkOff, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Disconnect Gmail", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            if (gmailBusy) return@Button
+                            gmailScope.launch {
+                                gmailBusy = true
+                                gmailError = null
+                                try {
+                                    val email = try {
+                                        FirebaseAuth.getInstance().currentUser?.email
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                    when (val outcome = gmailAuthClient.requestAuthorization(email)) {
+                                        is GmailAuthorizationOutcome.Authorized -> gmailConnected = true
+                                        is GmailAuthorizationOutcome.ConsentRequired -> gmailConsentLauncher.launch(
+                                            IntentSenderRequest.Builder(outcome.intentSender).build()
+                                        )
+                                        is GmailAuthorizationOutcome.Error -> gmailError = outcome.message
+                                    }
+                                } finally {
+                                    gmailBusy = false
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("btn_connect_gmail"),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !gmailBusy,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = ElectricBlue,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(Icons.Default.Mail, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Connect Gmail Account", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 
