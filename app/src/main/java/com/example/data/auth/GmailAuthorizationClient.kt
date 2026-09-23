@@ -147,10 +147,10 @@ class GmailAuthorizationClient(private val context: Context) {
         }
     }
 
-    /** Maps Google's nullable scope list to a plain set of scope URIs. */
-    private fun extractScopeUris(grantedScopes: List<Scope>?): Set<String> {
+    /** Maps Google's nullable scope-URI string list to a plain set. */
+    private fun extractScopeUris(grantedScopes: List<String>?): Set<String> {
         val scopes = grantedScopes ?: return emptySet()
-        return scopes.mapNotNull { it?.scopeUri }.toSet()
+        return scopes.mapNotNull { it }.toSet()
     }
 
     private fun establishSession(
