@@ -79,15 +79,24 @@ class GmailAuthorizationClient(private val context: Context) {
             try {
                 val result = authorizationClient.authorize(request).await()
                 when {
-                    result.hasResolution() && result.pendingIntent != null ->
-                        GmailAuthorizationOutcome.ConsentRequired(result.pendingIntent.intentSender)
-
-                    !result.accessToken.isNullOrBlank() ->
-                        establishSession(result.accessToken!!, result.grantedScopes.orEmpty().map { it.scopeUri }.toSet())
+                    result.hasResolution() -> {
+                        val pendingIntent = result.pendingIntent
+                        if (pendingIntent != null) {
+                            GmailAuthorizationOutcome.ConsentRequired(pendingIntent.intentSender)
+                        } else {
+                            SafeLogger.w(TAG, "Consent required but no pending intent provided")
+                            GmailAuthorizationOutcome.Error("Google consent screen is unavailable.")
+                        }
+                    }
 
                     else -> {
-                        SafeLogger.w(TAG, "Authorization finished without a token")
-                        GmailAuthorizationOutcome.Error("Google did not return an access token.")
+                        val token = result.accessToken
+                        if (token.isNullOrBlank()) {
+                            SafeLogger.w(TAG, "Authorization finished without a token")
+                            GmailAuthorizationOutcome.Error("Google did not return an access token.")
+                        } else {
+                            establishSession(token, extractScopeUris(result.grantedScopes))
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -111,7 +120,7 @@ class GmailAuthorizationClient(private val context: Context) {
                 SafeLogger.w(TAG, "Consent result carried no access token")
                 GmailAuthorizationOutcome.Error("Google did not return an access token.")
             } else {
-                establishSession(token, result.grantedScopes.orEmpty().map { it.scopeUri }.toSet())
+                establishSession(token, extractScopeUris(result.grantedScopes))
             }
         } catch (e: Exception) {
             SafeLogger.e(TAG, "Gmail consent result failed: ${e.message}")
@@ -136,6 +145,12 @@ class GmailAuthorizationClient(private val context: Context) {
             SafeLogger.e(TAG, "Gmail revoke failed (session still cleared): ${e.message}")
             onComplete()
         }
+    }
+
+    /** Maps Google's nullable scope list to a plain set of scope URIs. */
+    private fun extractScopeUris(grantedScopes: List<Scope>?): Set<String> {
+        val scopes = grantedScopes ?: return emptySet()
+        return scopes.mapNotNull { it?.scopeUri }.toSet()
     }
 
     private fun establishSession(
