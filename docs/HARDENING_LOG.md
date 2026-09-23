@@ -186,8 +186,8 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - CATEGORY: Release hardening
 - FILE: `app/build.gradle.kts`
 - PROBLEM: `isMinifyEnabled = false` in release; R8 shrinking/obfuscation disabled.
-- FIX: Left unchanged deliberately — enabling R8 without device testing risks breaking release behavior. Recommend enabling after regression testing on a release build.
-- STATUS: OPEN (recommendation).
+- FIX: Enabled as of 2026-09-23: `isMinifyEnabled = true` and `isShrinkResources = true` in the release build type; Kotlin-reflection keep rules added for Moshi. The `release-build` CI job runs the full R8/ProGuard pass on every push, so any shrinking failure is caught before merge.
+- STATUS: Build verified in CI. Runtime verification on a real device still pending (test login, AI generation, Gmail flows on a release build before publishing).
 
 ## SEC-017 — CI toolchain incompatible with AGP 9.1.1
 - DATE: 2026-09-22
@@ -236,3 +236,16 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - TEST: CI run 35813957846 (2026-09-23): secret scan ✅, unit tests ✅, debug APK assembly ✅, Android Lint ✅, CodeQL ✅.
 - COMMIT: (fix: fall back to default debug signing when keystore is absent; ci: add debug APK assembly and Android Lint jobs)
 - STATUS: Verified.
+
+## SEC-021 — Release signing not automated; secrets handling
+- DATE: 2026-09-23
+- SEVERITY: Low
+- CATEGORY: CI/CD / release engineering
+- FILES: `.github/workflows/security-ci.yml`, `app/build.gradle.kts`
+- PROBLEM: Release builds could not be produced or verified in CI because signing requires an upload keystore and passwords that must never be committed. Combined with SEC-016, the release path was entirely untested.
+- ROOT CAUSE: Signing was only possible with developer-local files/env vars.
+- FIX: New `release-build` CI job: three encrypted repository secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD`; key alias `upload` stays in `build.gradle.kts`). The keystore is base64-decoded into the runner's temp dir (never printed, never committed) and passed via `KEYSTORE_PATH`/`STORE_PASSWORD`/`KEY_PASSWORD` env vars. When the secrets are absent the job still runs `assembleRelease` and produces an UNSIGNED APK, so the R8 pass is verified on every push and CI stays green before secrets exist. The release build type only attaches the signing config when `KEYSTORE_PATH` is set and the file exists.
+- SECURITY NOTES: Secrets are referenced only in `env:` blocks; the workflow never echoes them. The signed release APK is uploaded as a run artifact (readable by anyone with repository read access — the repository is public, so treat it as a published build).
+- TEST: CI build of the release APK (unsigned until secrets are configured).
+- COMMIT: (feat(ci): release build job wired to encrypted secrets; R8 enabled for release)
+- STATUS: Build verified (unsigned path). Signed path requires the repository owner to add the three secrets — documented in README.
