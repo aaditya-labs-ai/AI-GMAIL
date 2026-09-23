@@ -166,9 +166,9 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - FILES: `app/src/main/java/com/example/data/auth/GmailOAuthManager.kt` and callers
 - PROBLEM: `GmailOAuthManager.setSession` is never called from production code (only tests). There is no OAuth flow to obtain a Gmail access token, so all live Gmail operations always fail with an authorization-required message.
 - ROOT CAUSE: The OAuth acquisition step was never built; requires a Google Cloud OAuth client with Gmail scopes (external configuration).
-- FIX: None implemented (do not invent infrastructure). Documented in README ("Gmail OAuth setup") — the security design (fail closed, memory-only tokens) is correct.
-- TEST: Requires manual testing after Google Cloud configuration.
-- STATUS: OPEN — requires manual Google Cloud/backend configuration. Not fixable in-source without inventing infrastructure.
+- FIX (2026-09-23): Implemented the in-app acquisition flow — new `app/src/main/java/com/example/data/auth/GmailAuthorizationClient.kt` (Google Play Services Authorization Client, `play-services-auth` 22.0.0; API surface verified against the published AAR). Requests only the least-privilege scopes (`gmail.readonly` + `gmail.send`), keeps the token in memory only (GmailOAuthManager), and fails closed on any error. UI: Settings → "Gmail Connection" with Connect / Disconnect (revoke + purge). No credentials are stored or invented; the flow activates only once the Google Cloud OAuth client + consent screen exist.
+- TEST: Unit tests in `GmailAuthorizationClientTest` (least-privilege scopes; fails closed on missing consent result). End-to-end authorization REQUIRES MANUAL TESTING after Google Cloud configuration (Gmail API enabled, OAuth consent screen with the two scopes, OAuth client for the app package + signing SHA-1).
+- STATUS: PARTIALLY FIXED — code complete and verified in CI; end-to-end activation requires Google Cloud configuration + on-device testing (tracked in README "Gmail OAuth setup").
 
 ## SEC-015 — Firestore user document writes unconstrained
 - DATE: 2026-09-22
@@ -177,8 +177,8 @@ _Ongoing security management record. One entry per finding. Never record secrets
 - FILE: `firestore.rules`
 - PROBLEM: Rules allow each user to read/write their own `users/{uid}` document with arbitrary fields. No privileged fields (roles/admin/subscription) exist in the current data model, so there is no exploit today; the risk appears if privileged fields are added to this document later.
 - ROOT CAUSE: Rules predate any privileged data model.
-- FIX: None (no change needed today). Recorded guidance: privileged attributes must live in custom claims or backend-validated documents, never in client-writable fields.
-- STATUS: OPEN (documented guardrail). Rules verified: unauthenticated denied, cross-user denied, unknown paths denied.
+- FIX (2026-09-23): Guardrail added to `firestore.rules` — the `users/{uid}` profile document is now READ-ONLY for clients, and every subcollection write is restricted to exactly the field list `FirestoreService.kt` writes (per-collection allowlists). A compromised client can no longer write undocumented fields (e.g. a future `role`/`isAdmin`) to its own documents.
+- STATUS: FIXED in the repository; REQUIRES DEPLOYMENT — upload the rules via Firebase Console (Firestore → Rules) or `firebase deploy --only firestore:rules`. Until deployed, the console's current rules remain in force. Re-test after deploy: sign-in, save a campaign, verify sync still works (rules change must not break legitimate writes).
 
 ## SEC-016 — Release build not minified
 - DATE: 2026-09-22
